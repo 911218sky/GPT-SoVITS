@@ -84,28 +84,28 @@ jobs:
           body: |
             ## GPT-SoVITS Windows Package
 
-            ### 📦 下載連結
+            ### Download Links
 
-            #### Hugging Face（推薦，永久保存）
+            #### Hugging Face (Recommended, Permanent Storage)
 
-            | 版本 | CUDA | 下載連結 |
-            |------|------|----------|
+            | Version | CUDA | Download |
+            |---------|------|----------|
             | cu124 | CUDA 12.4 | [GPT-SoVITS-${{ steps.info.outputs.date }}-cu124.7z](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.info.outputs.date }}-cu124.7z) |
             | cu128 | CUDA 12.8 | [GPT-SoVITS-${{ steps.info.outputs.date }}-cu128.7z](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.info.outputs.date }}-cu128.7z) |
 
-            #### GitHub Artifacts（備用，90天後過期）
+            #### GitHub Artifacts (Backup, Expires in 90 days)
 
-            👉 [點此前往 Artifacts 下載頁面](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            [Click here to download from Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
-            ### 🚀 使用方式
+            ### Usage
 
-            1. 下載對應你 CUDA 版本的 `.7z` 檔案
-            2. 解壓縮後執行 `go-webui.bat`
+            1. Download the `.7z` file matching your CUDA version
+            2. Extract and run `go-webui.bat`
 
-            ### 💡 CUDA 版本選擇
+            ### CUDA Version Guide
 
-            - **cu124** - 適用於較舊的顯卡驅動
-            - **cu128** - 適用於最新顯卡驅動（推薦）
+            - **cu124** - For older GPU drivers
+            - **cu128** - For latest GPU drivers (Recommended)
           draft: false
           prerelease: false
         env:
