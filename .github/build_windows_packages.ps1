@@ -351,8 +351,9 @@ $7zPath = "$pkgName.7z"
 Write-Host "[INFO] Compressing to $7zPath..."
 $start = Get-Date
 
-# Compress the JUNCTION, not the source dir directly, to get the correct folder name in archive
-& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$junctionName" -m0=lzma2 -mx=3 -mmt=on -bsp1
+# Compress the JUNCTION with maximum compression settings
+# mx=9: Ultra compression, md=256m: 256MB dictionary for better compression ratio
+& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$junctionName" -m0=lzma2 -mx=9 -md=256m -mfb=273 -ms=on -mmt=on -bsp1
 
 $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
