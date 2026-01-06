@@ -345,9 +345,11 @@ echo -e "${INFO}Installing Python Dependencies From requirements.txt..."
 
 hash -r
 
-run_pip_quiet -r extra-req.txt --no-deps
-
+# Install main requirements first (includes onnxruntime-gpu needed by faster-whisper)
 run_pip_quiet -r requirements.txt
+
+# Install extra requirements (faster-whisper) - it will use already installed onnxruntime-gpu
+run_pip_quiet -r extra-req.txt
 
 echo -e "${SUCCESS}Python Dependencies Installed"
 

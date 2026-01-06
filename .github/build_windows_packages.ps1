@@ -97,8 +97,10 @@ switch ($cuda) {
 
 # === Install Dependencies ===
 Write-Host "`n[4/8] Installing dependencies..."
-& $pip install -r extra-req.txt --no-deps --no-warn-script-location
+# Install main requirements first (includes onnxruntime-gpu needed by faster-whisper)
 & $pip install -r requirements.txt --no-warn-script-location
+# Install extra requirements (faster-whisper) - it will use already installed onnxruntime-gpu
+& $pip install -r extra-req.txt --no-warn-script-location
 & $pip cache purge
 
 # === Download Models ===
