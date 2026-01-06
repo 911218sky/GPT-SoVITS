@@ -78,6 +78,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -120,104 +123,17 @@ jobs:
           echo "Created deposition ID: $DEPOSITION_ID"
           echo "Bucket URL: $BUCKET_URL"
 
-          # Export variables for Python script
+          # Export variables for Python scripts
           export BUCKET_URL
           export DEPOSITION_ID
+          export VERSION
 
-          # Upload all .7z files using Python for better memory handling
+          # Install dependencies and run upload script
           pip install requests tqdm -q
+          python3 .github/scripts/upload_to_zenodo.py
 
-          python3 << 'PYTHON_SCRIPT'
-          import os
-          import requests
-          from pathlib import Path
-          from tqdm import tqdm
-
-          bucket_url = os.environ['BUCKET_URL']
-          token = os.environ['ZENODO_TOKEN']
-
-          packages_dir = Path('packages')
-
-          for file_path in packages_dir.glob('*.7z'):
-              filename = file_path.name
-              filesize = file_path.stat().st_size
-              
-              print(f"\nUploading {filename} ({filesize:,} bytes) to Zenodo...")
-              
-              # Create a progress bar
-              with tqdm(total=filesize, unit='B', unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
-                  # Create a wrapper to update progress bar
-                  def read_in_chunks(file_object, chunk_size=1024*1024):  # 1MB chunks
-                      while True:
-                          data = file_object.read(chunk_size)
-                          if not data:
-                              break
-                          pbar.update(len(data))
-                          yield data
-                  
-                  # Upload with streaming
-                  with open(file_path, 'rb') as f:
-                      response = requests.put(
-                          f"{bucket_url}/{filename}",
-                          data=read_in_chunks(f),
-                          headers={
-                              'Authorization': f'Bearer {token}',
-                              'Content-Type': 'application/octet-stream'
-                          },
-                          timeout=3600  # 1 hour timeout for large files
-                      )
-              
-              if response.status_code in [200, 201]:
-                  print(f"✓ Uploaded {filename}")
-              else:
-                  print(f"✗ Failed to upload {filename}: {response.status_code}")
-                  print(response.text)
-                  exit(1)
-
-          print("All files uploaded successfully!")
-          PYTHON_SCRIPT
-
-          # Update metadata
-          echo "Updating deposition metadata..."
-          METADATA=$(cat <<EOF
-          {
-            "metadata": {
-              "title": "GPT-SoVITS Windows Package $VERSION",
-              "upload_type": "software",
-              "description": "GPT-SoVITS Windows Package with Python 3.11 + PyTorch. This package includes both CUDA 12.4 and CUDA 12.8 versions. Contains all pretrained models (v2Pro, sv, G2PW), FunASR models, and FFmpeg.",
-              "creators": [
-                {"name": "GPT-SoVITS Team"}
-              ],
-              "keywords": ["GPT-SoVITS", "TTS", "Text-to-Speech", "Voice Cloning", "AI", "PyTorch", "CUDA"],
-              "license": "MIT",
-              "version": "$VERSION"
-            }
-          }
-          EOF
-          )
-
-          curl -s -X PUT "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID" \
-            -H "Authorization: Bearer $ZENODO_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "$METADATA"
-
-          # Publish the deposition
-          echo "Publishing to Zenodo..."
-          PUBLISH_RESPONSE=$(curl -s -X POST "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID/actions/publish" \
-            -H "Authorization: Bearer $ZENODO_TOKEN")
-
-          DOI=$(echo $PUBLISH_RESPONSE | jq -r '.doi')
-          RECORD_ID=$(echo $PUBLISH_RESPONSE | jq -r '.id')
-          ZENODO_URL="https://zenodo.org/records/$RECORD_ID"
-
-          echo "Published to Zenodo!"
-          echo "DOI: $DOI"
-          echo "URL: $ZENODO_URL"
-
-          # Set outputs
-          echo "doi=$DOI" >> $GITHUB_OUTPUT
-          echo "url=$ZENODO_URL" >> $GITHUB_OUTPUT
-          echo "record_id=$RECORD_ID" >> $GITHUB_OUTPUT
+          # Update metadata and publish
+          python3 .github/scripts/publish_to_zenodo.py
 
       - name: Create Combined Release
         uses: softprops/action-gh-release@v2
