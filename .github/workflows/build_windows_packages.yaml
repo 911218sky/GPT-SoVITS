@@ -40,11 +40,16 @@ jobs:
           Move-Item .github/build_windows_packages.ps1 ../build_windows_packages.ps1
           ../build_windows_packages.ps1
 
+      - name: Move Package to Workspace
+        shell: pwsh
+        run: |
+          Move-Item ../*.7z ./
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GPT-SoVITS-${{ matrix.torch_cuda }}
-          path: ../*.7z
+          path: "*.7z"
           retention-days: 7
 
   release:
