@@ -180,8 +180,25 @@ $start = Get-Date
 $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
 
-# Rename folder
-Rename-Item -Path $srcDir -NewName $pkgName
+# Rename folder with retry (Windows sometimes holds file handles briefly)
+$maxRetries = 5
+$retryDelay = 3
+for ($i = 1; $i -le $maxRetries; $i++) {
+    try {
+        Start-Sleep -Seconds $retryDelay
+        Rename-Item -Path $srcDir -NewName $pkgName -ErrorAction Stop
+        Write-Host "[INFO] Folder renamed successfully"
+        break
+    }
+    catch {
+        if ($i -eq $maxRetries) {
+            Write-Host "[WARNING] Could not rename folder after $maxRetries attempts, but package was created successfully"
+        }
+        else {
+            Write-Host "[INFO] Rename attempt $i failed, retrying in $retryDelay seconds..."
+        }
+    }
+}
 
 Write-Host ""
 Write-Host "=========================================="
