@@ -125,12 +125,13 @@ jobs:
           export DEPOSITION_ID
 
           # Upload all .7z files using Python for better memory handling
-          pip install requests -q
+          pip install requests tqdm -q
 
           python3 << 'PYTHON_SCRIPT'
           import os
           import requests
           from pathlib import Path
+          from tqdm import tqdm
 
           bucket_url = os.environ['BUCKET_URL']
           token = os.environ['ZENODO_TOKEN']
@@ -141,19 +142,30 @@ jobs:
               filename = file_path.name
               filesize = file_path.stat().st_size
               
-              print(f"Uploading {filename} ({filesize:,} bytes) to Zenodo...")
+              print(f"\nUploading {filename} ({filesize:,} bytes) to Zenodo...")
               
-              # Upload with streaming to avoid loading entire file into memory
-              with open(file_path, 'rb') as f:
-                  response = requests.put(
-                      f"{bucket_url}/{filename}",
-                      data=f,
-                      headers={
-                          'Authorization': f'Bearer {token}',
-                          'Content-Type': 'application/octet-stream'
-                      },
-                      timeout=3600  # 1 hour timeout for large files
-                  )
+              # Create a progress bar
+              with tqdm(total=filesize, unit='B', unit_scale=True, unit_divisor=1024, desc=filename) as pbar:
+                  # Create a wrapper to update progress bar
+                  def read_in_chunks(file_object, chunk_size=1024*1024):  # 1MB chunks
+                      while True:
+                          data = file_object.read(chunk_size)
+                          if not data:
+                              break
+                          pbar.update(len(data))
+                          yield data
+                  
+                  # Upload with streaming
+                  with open(file_path, 'rb') as f:
+                      response = requests.put(
+                          f"{bucket_url}/{filename}",
+                          data=read_in_chunks(f),
+                          headers={
+                              'Authorization': f'Bearer {token}',
+                              'Content-Type': 'application/octet-stream'
+                          },
+                          timeout=3600  # 1 hour timeout for large files
+                      )
               
               if response.status_code in [200, 201]:
                   print(f"✓ Uploaded {filename}")
