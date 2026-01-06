@@ -39,13 +39,36 @@ Write-Host "[INFO] Package: $pkgName"
 Write-Host "[INFO] CUDA: $cuda"
 
 # === Helper Functions ===
-function Download-File($url, $dest) {
+function Invoke-WithRetry {
+    param(
+        [scriptblock]$ScriptBlock,
+        [int]$MaxRetries = 15,
+        [int]$DelaySeconds = 3,
+        [string]$OperationName = "Operation"
+    )
+    for ($i = 1; $i -le $MaxRetries; $i++) {
+        try {
+            Start-Sleep -Seconds $DelaySeconds
+            & $ScriptBlock
+            return $true
+        }
+        catch {
+            if ($i -lt $MaxRetries) {
+                Write-Host "[INFO] $OperationName attempt $i failed, retrying..."
+            }
+        }
+    }
+    Write-Host "[WARNING] $OperationName failed after $MaxRetries attempts"
+    return $false
+}
+
+function Save-File($url, $dest) {
     $filename = Split-Path $url -Leaf
     Write-Host "  -> $filename"
     Invoke-WebRequest -Uri $url -OutFile $dest
 }
 
-function Download-HFFolder($repoPath, $localDir) {
+function Save-HFFolder($repoPath, $localDir) {
     # Download all files from a HuggingFace folder
     $apiUrl = "https://huggingface.co/api/models/lj1995/GPT-SoVITS/tree/main/$repoPath"
     $files = Invoke-RestMethod -Uri $apiUrl
@@ -117,15 +140,15 @@ New-Item -ItemType Directory -Force -Path $pretrainedDir | Out-Null
 
 # Download gsv-v2final-pretrained models
 Write-Host "[INFO] Downloading gsv-v2final-pretrained..."
-Download-HFFolder "gsv-v2final-pretrained" "$pretrainedDir\gsv-v2final-pretrained"
+Save-HFFolder "gsv-v2final-pretrained" "$pretrainedDir\gsv-v2final-pretrained"
 
 # Download chinese-hubert-base
 Write-Host "[INFO] Downloading chinese-hubert-base..."
-Download-HFFolder "chinese-hubert-base" "$pretrainedDir\chinese-hubert-base"
+Save-HFFolder "chinese-hubert-base" "$pretrainedDir\chinese-hubert-base"
 
 # Download chinese-roberta-wwm-ext-large
 Write-Host "[INFO] Downloading chinese-roberta-wwm-ext-large..."
-Download-HFFolder "chinese-roberta-wwm-ext-large" "$pretrainedDir\chinese-roberta-wwm-ext-large"
+Save-HFFolder "chinese-roberta-wwm-ext-large" "$pretrainedDir\chinese-roberta-wwm-ext-large"
 
 # Download G2PW Model
 Write-Host "[INFO] Downloading G2PW model..."
@@ -181,24 +204,10 @@ $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
 
 # Rename folder with retry (Windows sometimes holds file handles briefly)
-$maxRetries = 5
-$retryDelay = 3
-for ($i = 1; $i -le $maxRetries; $i++) {
-    try {
-        Start-Sleep -Seconds $retryDelay
-        Rename-Item -Path $srcDir -NewName $pkgName -ErrorAction Stop
-        Write-Host "[INFO] Folder renamed successfully"
-        break
-    }
-    catch {
-        if ($i -eq $maxRetries) {
-            Write-Host "[WARNING] Could not rename folder after $maxRetries attempts, but package was created successfully"
-        }
-        else {
-            Write-Host "[INFO] Rename attempt $i failed, retrying in $retryDelay seconds..."
-        }
-    }
+$renamed = Invoke-WithRetry -OperationName "Rename folder" -ScriptBlock {
+    Rename-Item -Path $srcDir -NewName $pkgName -ErrorAction Stop
 }
+if ($renamed) { Write-Host "[INFO] Folder renamed successfully" }
 
 Write-Host ""
 Write-Host "=========================================="
