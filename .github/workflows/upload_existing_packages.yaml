@@ -1,4 +1,4 @@
-name: Upload Existing Packages to Zenodo
+name: Upload Existing Packages
 
 on:
   workflow_dispatch:
@@ -20,12 +20,9 @@ env:
   HF_REPO: sky1218/GPT-SoVITS-Packages
 
 jobs:
-  upload-zenodo:
+  upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Download artifacts from previous run
         uses: actions/download-artifact@v4
         with:
@@ -48,40 +45,7 @@ jobs:
           echo "date=$date" >> $GITHUB_OUTPUT
           echo "suffix=$suffix" >> $GITHUB_OUTPUT
 
-      - name: Upload to Zenodo
-        id: zenodo
-        env:
-          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
-          echo "Creating new Zenodo deposition..."
-
-          # Create a new deposition
-          DEPOSITION_RESPONSE=$(curl -s -X POST "https://zenodo.org/api/deposit/depositions" \
-            -H "Authorization: Bearer $ZENODO_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{}')
-
-          DEPOSITION_ID=$(echo $DEPOSITION_RESPONSE | jq -r '.id')
-          BUCKET_URL=$(echo $DEPOSITION_RESPONSE | jq -r '.links.bucket')
-
-          echo "Created deposition ID: $DEPOSITION_ID"
-          echo "Bucket URL: $BUCKET_URL"
-
-          # Export variables for Python scripts
-          export BUCKET_URL
-          export DEPOSITION_ID
-          export VERSION
-
-          # Install dependencies and run upload script
-          pip install requests tqdm -q
-          python3 .github/scripts/upload_to_zenodo.py
-
-          # Update metadata and publish
-          python3 .github/scripts/publish_to_zenodo.py
-
-      - name: Create Combined Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
@@ -91,14 +55,12 @@ jobs:
 
             ### 📥 Download
 
-            | Package | GitHub | Hugging Face | Zenodo |
-            |---------|--------|--------------|--------|
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
+            | Package | GitHub | Hugging Face |
+            |---------|--------|--------------|
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) |
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) |
 
             > 💡 **GitHub Assets**: Download the .7z files directly from the Assets section below
-
-            [![DOI](https://zenodo.org/badge/DOI/${{ steps.zenodo.outputs.doi }}.svg)](https://doi.org/${{ steps.zenodo.outputs.doi }})
 
             ### 📋 Included in Both Packages
 
