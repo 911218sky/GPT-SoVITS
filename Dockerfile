@@ -12,12 +12,15 @@ ENV CUDA_VERSION=${CUDA_VERSION}
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install bash and essential tools (nvidia/cuda runtime image is minimal)
+# doxygen is needed for opencc to build from source
 RUN apt-get update && apt-get install -y --no-install-recommends \
   bash \
   wget \
   ca-certificates \
   curl \
   unzip \
+  doxygen \
+  build-essential \
   && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-c"]
