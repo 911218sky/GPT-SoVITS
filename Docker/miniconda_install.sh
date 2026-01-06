@@ -45,6 +45,10 @@ rm miniconda.sh
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 
+# Accept Conda Terms of Service for required channels (non-interactive)
+"$HOME/miniconda3/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+"$HOME/miniconda3/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 "$HOME/miniconda3/bin/conda" config --add channels conda-forge
 
 "$HOME/miniconda3/bin/conda" update -q --all -y 1>/dev/null
