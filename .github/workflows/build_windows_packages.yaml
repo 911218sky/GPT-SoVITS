@@ -32,22 +32,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Free up disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Run Build Script
+      - name: Build Package
         shell: pwsh
-        run: |
-          Move-Item .github/build_windows_packages.ps1 ../build_windows_packages.ps1
-          ../build_windows_packages.ps1
+        env:
+          TORCH_CUDA: ${{ matrix.torch_cuda }}
+          PKG_SUFFIX: ${{ github.event.inputs.suffix }}
+          DATE_SUFFIX: ${{ github.event.inputs.date }}
+        run: ./.github/build_windows_packages.ps1
 
       - name: Move Package to Workspace
         shell: pwsh

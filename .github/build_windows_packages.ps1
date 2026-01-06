@@ -302,8 +302,6 @@ Write-Host "[INFO] Compressing to $7zPath..."
 $start = Get-Date
 
 # Compress the JUNCTION, not the source dir directly, to get the correct folder name in archive
-# Use mx=3 (Fast) for balance between speed and size.
-# mx=5 is too slow (~15m), mx=1 is too large. mx=3 is the sweet spot (~5-7m).
 & "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$junctionName" -m0=lzma2 -mx=3 -mmt=on -bsp1
 
 $end = Get-Date
