@@ -46,3 +46,54 @@ jobs:
           name: GPT-SoVITS-${{ matrix.torch_cuda }}
           path: "*.7z"
           retention-days: 90
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate release info
+        id: info
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then
+            DATE=$(date +'%m%d')
+          fi
+          SUFFIX="${{ github.event.inputs.suffix }}"
+          TAG="v${DATE}${SUFFIX}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "run_url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag }}
+          name: GPT-SoVITS Windows Package ${{ steps.info.outputs.tag }}
+          body: |
+            ## GPT-SoVITS Windows Package
+
+            ### 📦 下載連結
+
+            由於檔案大小超過 GitHub Release 的 2GB 限制，請從 **Actions Artifacts** 下載：
+
+            👉 **[點此下載 Artifacts](${{ steps.info.outputs.run_url }})**
+
+            滾動到頁面底部的 **Artifacts** 區塊，選擇對應版本下載：
+
+            | 版本 | CUDA | 說明 |
+            |------|------|------|
+            | `GPT-SoVITS-cu124` | CUDA 12.4 | 適用於較舊的顯卡驅動 |
+            | `GPT-SoVITS-cu128` | CUDA 12.8 | 適用於最新顯卡驅動 |
+
+            ### 🚀 使用方式
+
+            1. 下載對應你 CUDA 版本的 `.7z` 檔案
+            2. 解壓縮後執行 `go-webui.bat`
+
+            ### ⚠️ 注意事項
+
+            - Artifacts 會保留 **90 天**，請及時下載
+            - 下載需要登入 GitHub 帳號
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
