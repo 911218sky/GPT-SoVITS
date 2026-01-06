@@ -1,5 +1,4 @@
 ARG CUDA_VERSION=12.6
-ARG TORCH_BASE=full
 
 FROM nvidia/cuda:${CUDA_VERSION}.0-runtime-ubuntu22.04
 
@@ -10,15 +9,21 @@ LABEL description="Docker image for GPT-SoVITS"
 ARG CUDA_VERSION=12.6
 
 ENV CUDA_VERSION=${CUDA_VERSION}
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install bash and essential tools (nvidia/cuda runtime image is minimal)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  bash \
+  wget \
+  ca-certificates \
+  curl \
+  && rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-c"]
 
 WORKDIR /workspace/GPT-SoVITS
 
 COPY Docker /workspace/GPT-SoVITS/Docker/
-
-ARG LITE=false
-ENV LITE=${LITE}
 
 ARG WORKFLOW=false
 ENV WORKFLOW=${WORKFLOW}
