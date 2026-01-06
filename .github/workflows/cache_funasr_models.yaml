@@ -61,18 +61,42 @@ jobs:
               snapshot_download(model_id, local_dir=local_dir)
               print(f'[INFO] Downloaded {model_name}')
               
-              # Remove files that may cause HF validation errors
+              # Keep only essential model files, remove ModelScope metadata
               import glob
-              for pattern in ['README*.md', '*.png', '*.jpg', '*.gif', 'fig/*', 'example/*']:
-                  for f in glob.glob(os.path.join(local_dir, pattern), recursive=True):
-                      try:
-                          os.remove(f)
-                          print(f'[INFO] Removed {f}')
-                      except: pass
+              essential_extensions = {'.pt', '.bin', '.json', '.yaml', '.onnx', '.pth', '.safetensors'}
+              for root, dirs, files in os.walk(local_dir):
+                  for f in files:
+                      filepath = os.path.join(root, f)
+                      ext = os.path.splitext(f)[1].lower()
+                      # Remove non-essential files
+                      if ext not in essential_extensions:
+                          try:
+                              os.remove(filepath)
+                              print(f'[INFO] Removed {f}')
+                          except: pass
+              # Remove empty directories
+              for root, dirs, files in os.walk(local_dir, topdown=False):
+                  for d in dirs:
+                      dirpath = os.path.join(root, d)
+                      if not os.listdir(dirpath):
+                          os.rmdir(dirpath)
               
               # Upload to HF with retry logic
               import time
               max_retries = 5
+              
+              # First, try to delete existing folder in HF repo
+              try:
+                  api.delete_folder(
+                      path_in_repo=model_name,
+                      repo_id=hf_repo,
+                      token=hf_token,
+                      repo_type="model"
+                  )
+                  print(f'[INFO] Deleted old {model_name} folder from HF')
+              except Exception as e:
+                  print(f'[INFO] No existing folder to delete or error: {e}')
+              
               for attempt in range(max_retries):
                   try:
                       print(f'[INFO] Uploading to HF: {model_name} (attempt {attempt+1}/{max_retries})')
