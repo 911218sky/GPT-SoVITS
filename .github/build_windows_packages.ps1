@@ -161,41 +161,6 @@ Invoke-WebRequest -Uri $g2pwUrl -OutFile $g2pwZip
 Expand-Archive -Path $g2pwZip -DestinationPath "$srcDir\GPT_SoVITS\text" -Force
 Remove-Item $g2pwZip
 
-# === Download FunASR models ===
-Write-Host "`n[5/9] Downloading FunASR models from ModelScope..."
-$asrModelsDir = "$srcDir\tools\asr\models"
-New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
-
-# VAD model
-Write-Host "[INFO] Downloading speech_fsmn_vad..."
-$vadDir = "$asrModelsDir\speech_fsmn_vad_zh-cn-16k-common-pytorch"
-New-Item -ItemType Directory -Force -Path $vadDir | Out-Null
-$vadFiles = @("am.mvn", "configuration.json", "config.yaml", "model.pt", "README.md")
-foreach ($file in $vadFiles) {
-    Write-Host "  -> $file"
-    Invoke-WebRequest -Uri "https://www.modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/resolve/master/$file" -OutFile "$vadDir\$file"
-}
-
-# Punctuation model
-Write-Host "[INFO] Downloading punc_ct-transformer..."
-$puncDir = "$asrModelsDir\punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
-New-Item -ItemType Directory -Force -Path $puncDir | Out-Null
-$puncFiles = @("configuration.json", "config.yaml", "model.pt", "tokens.json", "README.md")
-foreach ($file in $puncFiles) {
-    Write-Host "  -> $file"
-    Invoke-WebRequest -Uri "https://www.modelscope.cn/models/iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch/resolve/master/$file" -OutFile "$puncDir\$file"
-}
-
-# Paraformer ASR model (大檔案)
-Write-Host "[INFO] Downloading speech_paraformer-large..."
-$paraformerDir = "$asrModelsDir\speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
-New-Item -ItemType Directory -Force -Path $paraformerDir | Out-Null
-$paraformerFiles = @("am.mvn", "configuration.json", "config.yaml", "model.pt", "seg_dict", "tokens.json", "README.md")
-foreach ($file in $paraformerFiles) {
-    Write-Host "  -> $file"
-    Invoke-WebRequest -Uri "https://www.modelscope.cn/models/iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/resolve/master/$file" -OutFile "$paraformerDir\$file"
-}
-
 Write-Host "`n[INFO] All resources downloaded!"
 
 # ============================================
@@ -256,6 +221,38 @@ Remove-Item $ffDir.FullName -Recurse -Force
 # Download NLTK Data
 Write-Host "[INFO] Downloading NLTK data..."
 & $python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng', quiet=True)"
+
+# Download FunASR models using ModelScope SDK (complete downloads)
+Write-Host "[INFO] Downloading FunASR models via ModelScope SDK..."
+& $pip install modelscope -q --no-warn-script-location
+
+$asrModelsDir = "$srcDir\tools\asr\models"
+$modelscriptContent = @"
+from modelscope import snapshot_download
+import os
+
+models_dir = r'$asrModelsDir'
+os.makedirs(models_dir, exist_ok=True)
+
+models = [
+    'iic/speech_fsmn_vad_zh-cn-16k-common-pytorch',
+    'iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch', 
+    'iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch'
+]
+
+for model_id in models:
+    model_name = model_id.split('/')[-1]
+    local_dir = os.path.join(models_dir, model_name)
+    print(f'[INFO] Downloading {model_name}...')
+    snapshot_download(model_id, local_dir=local_dir)
+    print(f'[INFO] Downloaded {model_name}')
+
+print('[INFO] All FunASR models downloaded successfully!')
+"@
+
+$modelscriptContent | Out-File -FilePath "$tmpDir\download_funasr.py" -Encoding UTF8
+& $python "$tmpDir\download_funasr.py"
+Remove-Item "$tmpDir\download_funasr.py" -Force
 
 # ============================================
 # PHASE 3: Package
