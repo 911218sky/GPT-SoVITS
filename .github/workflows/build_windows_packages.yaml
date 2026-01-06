@@ -45,4 +45,4 @@ jobs:
         with:
           name: GPT-SoVITS-${{ matrix.torch_cuda }}
           path: "*.7z"
-          retention-days: 30
+          retention-days: 90
