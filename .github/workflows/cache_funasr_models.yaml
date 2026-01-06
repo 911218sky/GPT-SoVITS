@@ -70,15 +70,28 @@ jobs:
                           print(f'[INFO] Removed {f}')
                       except: pass
               
-              # Upload to HF directly using model name as folder
-              print(f'[INFO] Uploading to HF: {model_name}')
-              api.upload_folder(
-                  folder_path=local_dir,
-                  path_in_repo=model_name,
-                  repo_id=hf_repo,
-                  token=hf_token
-              )
-              print(f'[INFO] Uploaded {model_name} to HF')
+              # Upload to HF with retry logic
+              import time
+              max_retries = 5
+              for attempt in range(max_retries):
+                  try:
+                      print(f'[INFO] Uploading to HF: {model_name} (attempt {attempt+1}/{max_retries})')
+                      api.upload_folder(
+                          folder_path=local_dir,
+                          path_in_repo=model_name,
+                          repo_id=hf_repo,
+                          token=hf_token
+                      )
+                      print(f'[INFO] Uploaded {model_name} to HF')
+                      break
+                  except Exception as e:
+                      print(f'[WARN] Upload failed: {e}')
+                      if attempt < max_retries - 1:
+                          wait_time = 30 * (attempt + 1)
+                          print(f'[INFO] Retrying in {wait_time} seconds...')
+                          time.sleep(wait_time)
+                      else:
+                          raise e
               
               # Clean up to save space
               shutil.rmtree(local_dir)
