@@ -74,39 +74,6 @@ jobs:
           path: "*.7z"
           retention-days: 1
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.pkg.outputs.tag }}
-          name: GPT-SoVITS ${{ steps.pkg.outputs.tag }}
-          body: |
-            ## GPT-SoVITS Windows Package - ${{ matrix.torch_cuda }}
-
-            ### 📥 Download
-
-            | Package | Link |
-            |---------|------|
-            | ${{ steps.pkg.outputs.name }}.7z | [Download from Hugging Face](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${{ steps.pkg.outputs.name }}.7z) |
-
-            > 📦 Zenodo 下載連結請查看統一發布的 Release
-
-            ### 📋 Included
-
-            - Python 3.11 + PyTorch (${{ matrix.torch_cuda }})
-            - All pretrained models (including v2Pro, sv, G2PW)
-            - FunASR models (VAD, Punctuation)
-            - FFmpeg
-
-            ### 🚀 Usage
-
-            1. Download and extract the 7z file
-            2. Run `go-webui.bat` to start WebUI
-            3. Run `start_api.bat` to start API server
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   upload-zenodo:
     needs: build
     runs-on: ubuntu-latest
@@ -153,23 +120,46 @@ jobs:
           echo "Created deposition ID: $DEPOSITION_ID"
           echo "Bucket URL: $BUCKET_URL"
 
-          # Upload all .7z files using streaming upload (-T) to avoid memory issues
-          for file in packages/*.7z; do
-            filename=$(basename "$file")
-            filesize=$(stat -c%s "$file")
-            echo "Uploading $filename ($filesize bytes) to Zenodo..."
-            curl -X PUT "$BUCKET_URL/$filename" \
-              -H "Authorization: Bearer $ZENODO_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              -T "$file" \
-              --progress-bar \
-              --retry 3 \
-              --retry-delay 5
-            echo ""
-            echo "Uploaded $filename"
-          done
+          # Upload all .7z files using Python for better memory handling
+          pip install requests -q
 
-          echo "All files uploaded successfully!"
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import requests
+          from pathlib import Path
+
+          bucket_url = os.environ['BUCKET_URL']
+          token = os.environ['ZENODO_TOKEN']
+
+          packages_dir = Path('packages')
+
+          for file_path in packages_dir.glob('*.7z'):
+              filename = file_path.name
+              filesize = file_path.stat().st_size
+              
+              print(f"Uploading {filename} ({filesize:,} bytes) to Zenodo...")
+              
+              # Upload with streaming to avoid loading entire file into memory
+              with open(file_path, 'rb') as f:
+                  response = requests.put(
+                      f"{bucket_url}/{filename}",
+                      data=f,
+                      headers={
+                          'Authorization': f'Bearer {token}',
+                          'Content-Type': 'application/octet-stream'
+                      },
+                      timeout=3600  # 1 hour timeout for large files
+                  )
+              
+              if response.status_code in [200, 201]:
+                  print(f"✓ Uploaded {filename}")
+              else:
+                  print(f"✗ Failed to upload {filename}: {response.status_code}")
+                  print(response.text)
+                  exit(1)
+
+          print("All files uploaded successfully!")
+          PYTHON_SCRIPT
 
           # Update metadata
           echo "Updating deposition metadata..."
@@ -217,16 +207,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: GPT-SoVITS ${{ steps.version.outputs.version }} - All Packages
+          name: GPT-SoVITS ${{ steps.version.outputs.version }}
           body: |
             ## GPT-SoVITS Windows Packages ${{ steps.version.outputs.version }}
 
             ### 📥 Download
 
-            | Package | Hugging Face | Zenodo |
-            |---------|--------------|--------|
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
+            | Package | GitHub | Hugging Face | Zenodo |
+            |---------|--------|--------------|--------|
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
+
+            > 💡 **GitHub Assets**: Download the .7z files directly from the Assets section below
 
             [![DOI](https://zenodo.org/badge/DOI/${{ steps.zenodo.outputs.doi }}.svg)](https://doi.org/${{ steps.zenodo.outputs.doi }})
 
@@ -247,6 +239,8 @@ jobs:
             1. Download and extract the 7z file
             2. Run `go-webui.bat` to start WebUI
             3. Run `start_api.bat` to start API server
+          files: |
+            packages/*.7z
           draft: false
           prerelease: false
         env:
