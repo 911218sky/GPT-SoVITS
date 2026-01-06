@@ -41,7 +41,7 @@ jobs:
       - name: Move Package to Workspace
         shell: pwsh
         run: |
-          Move-Item ../*.7z* ./
+          Move-Item ../*.7z ./
 
       - name: Generate package info
         id: pkg
@@ -52,8 +52,7 @@ jobs:
           $suffix = "${{ github.event.inputs.suffix }}"
           $pkgName = "GPT-SoVITS-$date$suffix-${{ matrix.torch_cuda }}"
           echo "name=$pkgName" >> $env:GITHUB_OUTPUT
-          echo "date=$date" >> $env:GITHUB_OUTPUT
-          echo "tag=v$date$suffix" >> $env:GITHUB_OUTPUT
+          echo "tag=v$date$suffix-${{ matrix.torch_cuda }}" >> $env:GITHUB_OUTPUT
 
       - name: Upload to Hugging Face
         env:
@@ -61,29 +60,37 @@ jobs:
         shell: pwsh
         run: |
           pip install huggingface_hub -q
-          $files = Get-ChildItem -Filter "*.7z*"
-          foreach ($file in $files) {
-            Write-Host "Uploading $($file.Name) to Hugging Face (will overwrite if exists)..."
-            python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
-          }
+          $file = Get-Item "*.7z"
+          Write-Host "Uploading $($file.Name) to Hugging Face..."
+          python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
+          Write-Host "Upload completed!"
 
-      - name: Upload to Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.pkg.outputs.tag }}
-          name: GPT-SoVITS Windows Package ${{ steps.pkg.outputs.tag }}
-          files: "*.7z*"
+          name: GPT-SoVITS ${{ steps.pkg.outputs.tag }}
           body: |
             ## GPT-SoVITS Windows Package - ${{ matrix.torch_cuda }}
 
-            ### Download from Hugging Face (Recommended, Faster)
+            ### 📥 Download
 
-            | File | Link |
-            |------|------|
-            ${{ matrix.torch_cuda == 'cu124' && format('| cu124 | [Download](https://huggingface.co/{0}/resolve/main/{1}.7z.001) |', env.HF_REPO, steps.pkg.outputs.name) || format('| cu128 | [Download](https://huggingface.co/{0}/resolve/main/{1}.7z.001) |', env.HF_REPO, steps.pkg.outputs.name) }}
+            | Package | Link |
+            |---------|------|
+            | ${{ steps.pkg.outputs.name }}.7z | [Download from Hugging Face](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${{ steps.pkg.outputs.name }}.7z) |
 
-            ### Split File Info
-            Files are split into 1GB volumes. Download all `.7z.001`, `.7z.002`, etc. and extract with 7-Zip.
+            ### 📋 Included
+
+            - Python 3.11 + PyTorch (${{ matrix.torch_cuda }})
+            - All pretrained models (including v2Pro, sv, G2PW)
+            - FunASR models (VAD, Punctuation)
+            - FFmpeg
+
+            ### 🚀 Usage
+
+            1. Download and extract the 7z file
+            2. Run `go-webui.bat` to start WebUI
+            3. Run `start_api.bat` to start API server
           draft: false
           prerelease: false
         env:

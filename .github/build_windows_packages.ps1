@@ -154,6 +154,11 @@ Save-HFFolder "chinese-roberta-wwm-ext-large" "$pretrainedDir\chinese-roberta-ww
 Write-Host "[INFO] Downloading v2Pro..."
 Save-HFFolder "v2Pro" "$pretrainedDir\v2Pro"
 
+# Download sv model (Speaker Verification - required for v2Pro)
+Write-Host "[INFO] Downloading sv model..."
+New-Item -ItemType Directory -Force -Path "$pretrainedDir\sv" | Out-Null
+Invoke-WebRequest -Uri "$HF_BASE/sv/pretrained_eres2netv2w24s4ep4.ckpt" -OutFile "$pretrainedDir\sv\pretrained_eres2netv2w24s4ep4.ckpt"
+
 # Download s1v3.ckpt
 Write-Host "[INFO] Downloading s1v3.ckpt..."
 Invoke-WebRequest -Uri "$HF_BASE/s1v3.ckpt" -OutFile "$pretrainedDir\s1v3.ckpt"
@@ -165,6 +170,45 @@ $g2pwZip = "$tmpDir\G2PWModel.zip"
 Invoke-WebRequest -Uri $g2pwUrl -OutFile $g2pwZip
 Expand-Archive -Path $g2pwZip -DestinationPath "$srcDir\GPT_SoVITS\text" -Force
 Remove-Item $g2pwZip
+
+# Download FunASR models (for ASR functionality)
+Write-Host "[INFO] Downloading FunASR models..."
+$asrModelsDir = "$srcDir\tools\asr\models"
+New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
+
+# Download speech_fsmn_vad model
+Write-Host "[INFO] Downloading speech_fsmn_vad..."
+$vadDir = "$asrModelsDir\speech_fsmn_vad_zh-cn-16k-common-pytorch"
+New-Item -ItemType Directory -Force -Path $vadDir | Out-Null
+$vadFiles = @(
+    "am.mvn",
+    "configuration.json",
+    "config.yaml",
+    "model.pt",
+    "README.md"
+)
+foreach ($file in $vadFiles) {
+    $url = "https://www.modelscope.cn/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch/resolve/master/$file"
+    Write-Host "  -> $file"
+    Invoke-WebRequest -Uri $url -OutFile "$vadDir\$file"
+}
+
+# Download punc_ct-transformer model
+Write-Host "[INFO] Downloading punc_ct-transformer..."
+$puncDir = "$asrModelsDir\punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
+New-Item -ItemType Directory -Force -Path $puncDir | Out-Null
+$puncFiles = @(
+    "configuration.json",
+    "config.yaml",
+    "model.pt",
+    "tokens.json",
+    "README.md"
+)
+foreach ($file in $puncFiles) {
+    $url = "https://www.modelscope.cn/models/iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch/resolve/master/$file"
+    Write-Host "  -> $file"
+    Invoke-WebRequest -Uri $url -OutFile "$puncDir\$file"
+}
 
 # === Download FFmpeg ===
 Write-Host "`n[6/8] Downloading FFmpeg..."
@@ -205,17 +249,16 @@ Get-ChildItem "$srcDir" -Filter "*.ipynb" | Remove-Item -Force
 Set-Location ..
 $7zPath = "$pkgName.7z"
 
-Write-Host "[INFO] Compressing to $7zPath (split into 1GB volumes, fast mode)..."
+Write-Host "[INFO] Compressing to $7zPath (single file, fast mode)..."
 $start = Get-Date
-# mx=5 for faster compression, -v1g for 1GB split volumes
-& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$srcDir" -m0=lzma2 -mx=5 -mmt=on -v1g -bsp1
+# mx=5 for faster compression
+& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$srcDir" -m0=lzma2 -mx=5 -mmt=on -bsp1
 $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
 
-# Count and list split files
-$splitFiles = Get-ChildItem -Filter "$pkgName.7z*"
-Write-Host "[INFO] Created $($splitFiles.Count) split file(s):"
-$splitFiles | ForEach-Object { Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
+# Show file info
+$pkgFile = Get-Item "$7zPath"
+Write-Host "[INFO] Created package: $($pkgFile.Name) ($([math]::Round($pkgFile.Length / 1GB, 2)) GB)"
 
 # Rename folder with retry (Windows sometimes holds file handles briefly)
 $renamed = Invoke-WithRetry -OperationName "Rename folder" -ScriptBlock {
