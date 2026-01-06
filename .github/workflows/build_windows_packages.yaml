@@ -32,6 +32,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free up disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - name: Run Build Script
         shell: pwsh
         run: |
@@ -66,121 +77,80 @@ jobs:
           python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
           Write-Host "Upload completed!"
 
-      - name: Upload artifact
+      - name: Save Release Info
+        shell: pwsh
+        run: |
+          $pkgName = "${{ steps.pkg.outputs.name }}"
+          $date = "${{ steps.pkg.outputs.date }}"
+          $suffix = "${{ steps.pkg.outputs.suffix }}"
+          $content = "$pkgName`n$date`n$suffix"
+          $content | Out-File -FilePath "release_info_${{ matrix.torch_cuda }}.txt" -Encoding UTF8
+
+      - name: Upload Release Info
         uses: actions/upload-artifact@v4
         with:
-          name: package-${{ matrix.torch_cuda }}
-          path: "*.7z"
-          retention-days: 7
+          name: release_info_${{ matrix.torch_cuda }}
+          path: release_info_${{ matrix.torch_cuda }}.txt
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    if: success()
     steps:
-      - name: Download all artifacts
+      - uses: actions/checkout@v4
+
+      - name: Download Release Info
         uses: actions/download-artifact@v4
         with:
-          path: packages
+          pattern: release_info_*
+          path: release_infos
           merge-multiple: true
 
-      - name: List downloaded files
+      - name: Generate Release Body
+        id: body
         run: |
-          echo "Downloaded packages:"
-          ls -la packages/
+          echo "## GPT-SoVITS Windows Package" > release_body.md
+          echo "" >> release_body.md
+          echo "This release contains the Windows package for GPT-SoVITS." >> release_body.md
+          echo "" >> release_body.md
+          echo "### 📥 Download Options (Hugging Face)" >> release_body.md
+          echo "" >> release_body.md
+          echo "| Package | Download Link |" >> release_body.md
+          echo "|---------|---------------|" >> release_body.md
 
-      - name: Generate version info
-        id: version
-        run: |
-          date="${{ github.event.inputs.date }}"
-          if [ -z "$date" ]; then date=$(date +"%m%d"); fi
-          suffix="${{ github.event.inputs.suffix }}"
-          echo "version=v$date$suffix" >> $GITHUB_OUTPUT
-          echo "date=$date" >> $GITHUB_OUTPUT
-          echo "suffix=$suffix" >> $GITHUB_OUTPUT
-
-      - name: Split large files for GitHub Release
-        run: |
-          mkdir -p split_packages
-          cd packages
-
-          for file in *.7z; do
-            if [ -f "$file" ]; then
-              size=$(stat -c%s "$file")
-              echo "Processing $file ($(numfmt --to=iec $size))"
-              
-              # If file > 1.9GB, split it
-              if [ $size -gt 1900000000 ]; then
-                echo "Splitting $file into 1.9GB parts..."
-                split -b 1900M -d --additional-suffix=.part "$file" "../split_packages/${file}."
-              else
-                cp "$file" "../split_packages/"
-              fi
+          # Read all release info files
+          TAG_NAME=""
+          for file in release_infos/release_info_*.txt; do
+            # Read lines: 1=Name, 2=Date, 3=Suffix
+            NAME=$(sed '1q;d' "$file" | tr -d '\r')
+            DATE=$(sed '2q;d' "$file" | tr -d '\r')
+            SUFFIX=$(sed '3q;d' "$file" | tr -d '\r')
+            
+            # Construct Tag Name (e.g. v0106)
+            if [ -z "$TAG_NAME" ]; then
+                TAG_NAME="v${DATE}${SUFFIX}"
             fi
+            
+            LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.7z"
+            echo "| $NAME.7z | [⬇️ Download]($LINK) |" >> release_body.md
           done
 
-          echo ""
-          echo "Split packages:"
-          ls -la ../split_packages/
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+          echo "" >> release_body.md
+          echo "### 📋 Included Models" >> release_body.md
+          echo "- All Pretrained Models (GPT-SoVITS)" >> release_body.md
+          echo "- FunASR Models (VAD, Punctuation, ASR)" >> release_body.md
+          echo "- G2PW Model" >> release_body.md
+          echo "- UVR5 Models" >> release_body.md
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: GPT-SoVITS ${{ steps.version.outputs.version }}
-          body: |
-            ## GPT-SoVITS Windows Packages ${{ steps.version.outputs.version }}
-
-            ### 📥 Download Options
-
-            #### Option 1: Hugging Face (Recommended - Single File)
-
-            | Package | Download Link |
-            |---------|---------------|
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | [⬇️ Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) |
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | [⬇️ Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) |
-
-            #### Option 2: GitHub Release (Split Files)
-
-            Download all `.part` files from the Assets below, then merge them:
-
-            **Windows (PowerShell):**
-            ```powershell
-            # For cu124
-            cmd /c copy /b GPT-SoVITS-*-cu124.7z.*.part GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z
-
-            # For cu128
-            cmd /c copy /b GPT-SoVITS-*-cu128.7z.*.part GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z
-            ```
-
-            **Linux/Mac:**
-            ```bash
-            # For cu124
-            cat GPT-SoVITS-*-cu124.7z.*.part > GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z
-
-            # For cu128
-            cat GPT-SoVITS-*-cu128.7z.*.part > GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z
-            ```
-
-            ### 📋 Included in Both Packages
-
-            - Python 3.11 + PyTorch
-            - All pretrained models (including v2Pro, sv, G2PW)
-            - FunASR models (VAD, Punctuation)
-            - FFmpeg
-
-            ### 🔧 CUDA Versions
-
-            - **cu124**: For NVIDIA GPUs with CUDA 12.4
-            - **cu128**: For NVIDIA GPUs with CUDA 12.8
-
-            ### 🚀 Usage
-
-            1. Download and extract the 7z file
-            2. Run `go-webui.bat` to start WebUI
-            3. Run `start_api.bat` to start API server
-          files: |
-            split_packages/*
-          draft: false
-          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.body.outputs.tag_name }}
+          name: GPT-SoVITS ${{ steps.body.outputs.tag_name }}
+          body_path: release_body.md
+          draft: false
+          prerelease: false
