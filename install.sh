@@ -49,7 +49,8 @@ run_pip_quiet() {
 
 run_wget_quiet() {
     if wget --tries=25 --wait=5 --read-timeout=40 -q --show-progress "$@" 2>&1; then
-        tput cuu1 && tput el
+        # tput may fail in non-TTY environments (like Docker), ignore errors
+        (tput cuu1 && tput el) 2>/dev/null || true
     else
         echo -e "${ERROR} Wget failed"
         exit 1
