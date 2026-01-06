@@ -153,14 +153,19 @@ jobs:
           echo "Created deposition ID: $DEPOSITION_ID"
           echo "Bucket URL: $BUCKET_URL"
 
-          # Upload all .7z files
+          # Upload all .7z files using streaming upload (-T) to avoid memory issues
           for file in packages/*.7z; do
             filename=$(basename "$file")
-            echo "Uploading $filename to Zenodo..."
-            curl -s -X PUT "$BUCKET_URL/$filename" \
+            filesize=$(stat -c%s "$file")
+            echo "Uploading $filename ($filesize bytes) to Zenodo..."
+            curl -X PUT "$BUCKET_URL/$filename" \
               -H "Authorization: Bearer $ZENODO_TOKEN" \
               -H "Content-Type: application/octet-stream" \
-              --data-binary @"$file"
+              -T "$file" \
+              --progress-bar \
+              --retry 3 \
+              --retry-delay 5
+            echo ""
             echo "Uploaded $filename"
           done
 
