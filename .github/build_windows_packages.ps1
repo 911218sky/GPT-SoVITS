@@ -43,7 +43,7 @@ function Invoke-WithRetry {
     param(
         [scriptblock]$ScriptBlock,
         [int]$MaxRetries = 15,
-        [int]$DelaySeconds = 3,
+        [int]$DelaySeconds = 5,
         [string]$OperationName = "Operation"
     )
     for ($i = 1; $i -le $MaxRetries; $i++) {

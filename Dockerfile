@@ -13,6 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install bash and essential tools (nvidia/cuda runtime image is minimal)
 # doxygen is needed for opencc to build from source
+# software-properties-common is needed to add PPA for updated libstdc++
 RUN apt-get update && apt-get install -y --no-install-recommends \
   bash \
   wget \
@@ -21,7 +22,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   unzip \
   doxygen \
   build-essential \
+  software-properties-common \
   && rm -rf /var/lib/apt/lists/*
+
+# Update libstdc++ to get GLIBCXX_3.4.32 (required by opencc)
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
+  apt-get update && \
+  apt-get install -y libstdc++6 && \
+  rm -rf /var/lib/apt/lists/*
 
 SHELL ["/bin/bash", "-c"]
 
@@ -57,13 +65,6 @@ WORKDIR /workspace/GPT-SoVITS
 
 COPY . /workspace/GPT-SoVITS
 
-CMD ["/bin/bash", "-c", "\
-  rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
-  rm -rf /workspace/GPT-SoVITS/GPT_SoVITS/text/G2PWModel && \
-  rm -rf /workspace/GPT-SoVITS/tools/asr/models && \
-  rm -rf /workspace/GPT-SoVITS/tools/uvr5/uvr5_weights && \
-  ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models && \
-  ln -s /workspace/models/G2PWModel /workspace/GPT-SoVITS/GPT_SoVITS/text/G2PWModel && \
-  ln -s /workspace/models/asr_models /workspace/GPT-SoVITS/tools/asr/models && \
-  ln -s /workspace/models/uvr5_weights /workspace/GPT-SoVITS/tools/uvr5/uvr5_weights && \
-  exec bash"]
+RUN chmod +x /workspace/GPT-SoVITS/Docker/entrypoint.sh
+
+ENTRYPOINT ["/workspace/GPT-SoVITS/Docker/entrypoint.sh"]

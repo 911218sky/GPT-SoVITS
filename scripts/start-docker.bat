@@ -22,6 +22,8 @@ docker compose pull GPT-SoVITS-CU128
 
 echo.
 echo [INFO] Starting GPT-SoVITS-CU128 container...
+echo [INFO] WebUI will be available at: http://localhost:9874
+echo.
 docker compose up GPT-SoVITS-CU128
 
 pause
