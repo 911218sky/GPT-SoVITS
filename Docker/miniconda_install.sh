@@ -42,9 +42,9 @@ source "$HOME/miniconda3/etc/profile.d/conda.sh"
 "$HOME/miniconda3/bin/conda" install gcc=14 gxx ffmpeg cmake make unzip -q -y
 
 if [ "$CUDA_VERSION" = "12.8" ]; then
-    "$HOME/miniconda3/bin/pip" install torch torchaudio --no-cache-dir --index-url https://download.pytorch.org/whl/cu128
+    "$HOME/miniconda3/bin/pip" install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
 elif [ "$CUDA_VERSION" = "12.6" ]; then
-    "$HOME/miniconda3/bin/pip" install torch torchaudio --no-cache-dir --index-url https://download.pytorch.org/whl/cu126
+    "$HOME/miniconda3/bin/pip" install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
 fi
 
 "$HOME/miniconda3/bin/pip" cache purge

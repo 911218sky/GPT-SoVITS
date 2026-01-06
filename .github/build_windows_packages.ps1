@@ -191,11 +191,11 @@ Write-Host "[INFO] Setting up Python 3.11..."
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
 switch ($cuda) {
-    "cu124" {
-        & $pip install torch torchaudio torchcodec --index-url https://download.pytorch.org/whl/cu124 --no-warn-script-location
+    "cu126" {
+        & $pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
     }
     "cu128" {
-        & $pip install torch torchaudio torchcodec --index-url https://download.pytorch.org/whl/cu128 --no-warn-script-location
+        & $pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
     }
     default {
         Write-Error "Unsupported CUDA version: $cuda"

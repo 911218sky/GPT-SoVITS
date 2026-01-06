@@ -1,4 +1,5 @@
 --no-binary=opencc
+setuptools<81
 numpy<2.0
 scipy
 tensorboard
@@ -15,7 +16,6 @@ cn2an
 pypinyin
 pyopenjtalk>=0.4.1
 g2p_en
-torchaudio
 modelscope
 sentencepiece
 transformers>=4.43,<=4.50
