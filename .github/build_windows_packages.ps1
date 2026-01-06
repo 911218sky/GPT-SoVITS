@@ -280,25 +280,40 @@ foreach ($item in $removeItems) {
 Get-ChildItem "$srcDir" -Filter "*.sh" | Remove-Item -Force
 Get-ChildItem "$srcDir" -Filter "*.ipynb" | Remove-Item -Force
 
-# Create package
+# Create Junction for correct folder name in 7z
 Set-Location ..
+$junctionName = $pkgName
+$junctionTarget = $srcDir
+
+Write-Host "[INFO] Creating Junction: $junctionName -> $junctionTarget"
+if (Test-Path $junctionName) {
+    if ((Get-Item $junctionName).Attributes -match "ReparsePoint") {
+        cmd /c rmdir "$junctionName"
+    }
+    else {
+        Remove-Item "$junctionName" -Recurse -Force
+    }
+}
+cmd /c mklink /J "$junctionName" "$junctionTarget"
+
 $7zPath = "$pkgName.7z"
 
 Write-Host "[INFO] Compressing to $7zPath..."
 $start = Get-Date
-& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$srcDir" -m0=lzma2 -mx=5 -mmt=on -bsp1
+
+# Compress the JUNCTION, not the source dir directly, to get the correct folder name in archive
+& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$junctionName" -m0=lzma2 -mx=5 -mmt=on -bsp1
+
 $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
+
+# Cleanup Junction
+Write-Host "[INFO] Removing Junction..."
+cmd /c rmdir "$junctionName"
 
 # Show file info
 $pkgFile = Get-Item "$7zPath"
 Write-Host "[INFO] Created package: $($pkgFile.Name) ($([math]::Round($pkgFile.Length / 1GB, 2)) GB)"
-
-# Rename folder
-$renamed = Invoke-WithRetry -OperationName "Rename folder" -ScriptBlock {
-    Rename-Item -Path $srcDir -NewName $pkgName -ErrorAction Stop
-}
-if ($renamed) { Write-Host "[INFO] Folder renamed successfully" }
 
 Write-Host ""
 Write-Host "=========================================="
