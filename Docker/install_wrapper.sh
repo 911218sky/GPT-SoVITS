@@ -14,9 +14,8 @@ mkdir -p GPT_SoVITS
 
 mkdir -p GPT_SoVITS/text
 
-ln -s /workspace/models/pretrained_models /workspace/GPT-SoVITS/GPT_SoVITS/pretrained_models
-
-ln -s /workspace/models/G2PWModel /workspace/GPT-SoVITS/GPT_SoVITS/text/G2PWModel
+# Note: symlinks for pretrained_models and G2PWModel are created at runtime by Dockerfile CMD
+# Do not create them here as they would conflict with install.sh's unzip operations
 
 bash install.sh --device "CU${CUDA_VERSION//./}" --source HF
 
