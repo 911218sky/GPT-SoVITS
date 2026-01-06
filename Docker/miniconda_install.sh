@@ -12,22 +12,10 @@ if [ -d "$HOME/miniconda3" ]; then
     exit 0
 fi
 
-WORKFLOW=${WORKFLOW:-"false"}
-TARGETPLATFORM=${TARGETPLATFORM:-"linux/amd64"}
+WGET_CMD=(wget --tries=25 --wait=5 --read-timeout=40 --retry-on-http-error=404)
 
-if [ "$WORKFLOW" = "true" ]; then
-    WGET_CMD=(wget -nv --tries=25 --wait=5 --read-timeout=40 --retry-on-http-error=404)
-else
-    WGET_CMD=(wget --tries=25 --wait=5 --read-timeout=40 --retry-on-http-error=404)
-fi
-
-if [ "$TARGETPLATFORM" = "linux/amd64" ]; then
-    "${WGET_CMD[@]}" -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-py311_25.3.1-1-Linux-x86_64.sh
-elif [ "$TARGETPLATFORM" = "linux/arm64" ]; then
-    "${WGET_CMD[@]}" -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-py311_25.3.1-1-Linux-aarch64.sh
-else
-    exit 1
-fi
+# Download latest Miniconda for Linux x86_64
+"${WGET_CMD[@]}" -O miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 
 LOG_PATH="/tmp/miniconda-install.log"
 
@@ -44,10 +32,6 @@ fi
 rm miniconda.sh
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
-
-# Accept Conda Terms of Service for required channels (non-interactive)
-"$HOME/miniconda3/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
-"$HOME/miniconda3/bin/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 
 "$HOME/miniconda3/bin/conda" config --add channels conda-forge
 

@@ -86,7 +86,6 @@ jobs:
           platforms: linux/amd64
           build-args: |
             CUDA_VERSION=${{ matrix.cuda_version }}
-            WORKFLOW=true
           tags: |
             sky1218/gpt-sovits:${{ matrix.tag_prefix }}-${{ needs.generate-meta.outputs.tag }}
             sky1218/gpt-sovits:latest-${{ matrix.tag_prefix }}
