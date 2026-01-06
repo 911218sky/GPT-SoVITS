@@ -310,17 +310,17 @@ fi
 if [ "$USE_CUDA" = true ]; then
     if [ "$CUDA" = 128 ]; then
         echo -e "${INFO}Installing PyTorch For CUDA 12.8..."
-        run_pip_quiet torch torchaudio --index-url "https://download.pytorch.org/whl/cu128"
+        run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/cu128"
     elif [ "$CUDA" = 126 ]; then
         echo -e "${INFO}Installing PyTorch For CUDA 12.6..."
-        run_pip_quiet torch torchaudio --index-url "https://download.pytorch.org/whl/cu126"
+        run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/cu126"
     fi
 elif [ "$USE_ROCM" = true ]; then
     echo -e "${INFO}Installing PyTorch For ROCm 6.2..."
-    run_pip_quiet torch torchaudio --index-url "https://download.pytorch.org/whl/rocm6.2"
+    run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/rocm6.2"
 elif [ "$USE_CPU" = true ]; then
     echo -e "${INFO}Installing PyTorch For CPU..."
-    run_pip_quiet torch torchaudio --index-url "https://download.pytorch.org/whl/cpu"
+    run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/cpu"
 fi
 echo -e "${SUCCESS}PyTorch Installed"
 

@@ -192,10 +192,10 @@ Write-Host "[INFO] Setting up Python 3.11..."
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
 switch ($cuda) {
     "cu124" {
-        & $pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124 --no-warn-script-location
+        & $pip install torch torchaudio torchcodec --index-url https://download.pytorch.org/whl/cu124 --no-warn-script-location
     }
     "cu128" {
-        & $pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --no-warn-script-location
+        & $pip install torch torchaudio torchcodec --index-url https://download.pytorch.org/whl/cu128 --no-warn-script-location
     }
     default {
         Write-Error "Unsupported CUDA version: $cuda"
@@ -230,6 +230,7 @@ $asrModelsDir = "$srcDir\tools\asr\models"
 $modelscriptContent = @"
 from modelscope import snapshot_download
 import os
+import time
 
 models_dir = r'$asrModelsDir'
 os.makedirs(models_dir, exist_ok=True)
@@ -240,11 +241,24 @@ models = [
     'iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch'
 ]
 
+def download_with_retry(model_id, local_dir, max_retries=5):
+    for i in range(max_retries):
+        try:
+            snapshot_download(model_id, local_dir=local_dir)
+            return
+        except Exception as e:
+            print(f"[WARN] Attempt {i+1} failed for {model_id}: {e}")
+            if i < max_retries - 1:
+                print("Retrying in 10 seconds...")
+                time.sleep(10)
+            else:
+                raise e
+
 for model_id in models:
     model_name = model_id.split('/')[-1]
     local_dir = os.path.join(models_dir, model_name)
     print(f'[INFO] Downloading {model_name}...')
-    snapshot_download(model_id, local_dir=local_dir)
+    download_with_retry(model_id, local_dir)
     print(f'[INFO] Downloaded {model_name}')
 
 print('[INFO] All FunASR models downloaded successfully!')
