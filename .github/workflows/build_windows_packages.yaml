@@ -41,71 +41,49 @@ jobs:
       - name: Move Package to Workspace
         shell: pwsh
         run: |
-          Move-Item ../*.7z ./
+          Move-Item ../*.7z* ./
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v5
-        with:
-          name: GPT-SoVITS-${{ matrix.torch_cuda }}
-          path: "*.7z"
-          retention-days: 90
+      - name: Generate package info
+        id: pkg
+        shell: pwsh
+        run: |
+          $date = "${{ github.event.inputs.date }}"
+          if ([string]::IsNullOrWhiteSpace($date)) { $date = Get-Date -Format "MMdd" }
+          $suffix = "${{ github.event.inputs.suffix }}"
+          $pkgName = "GPT-SoVITS-$date$suffix-${{ matrix.torch_cuda }}"
+          echo "name=$pkgName" >> $env:GITHUB_OUTPUT
+          echo "date=$date" >> $env:GITHUB_OUTPUT
+          echo "tag=v$date$suffix" >> $env:GITHUB_OUTPUT
 
       - name: Upload to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          pip install huggingface_hub
-          $file = Get-ChildItem -Filter "*.7z" | Select-Object -First 1
-          Write-Host "Uploading $($file.Name) to Hugging Face..."
-          python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
         shell: pwsh
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Generate release info
-        id: info
         run: |
-          DATE="${{ github.event.inputs.date }}"
-          if [ -z "$DATE" ]; then
-            DATE=$(date +'%m%d')
-          fi
-          SUFFIX="${{ github.event.inputs.suffix }}"
-          TAG="v${DATE}${SUFFIX}"
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "date=$DATE" >> $GITHUB_OUTPUT
+          pip install huggingface_hub -q
+          $files = Get-ChildItem -Filter "*.7z*"
+          foreach ($file in $files) {
+            Write-Host "Uploading $($file.Name) to Hugging Face (will overwrite if exists)..."
+            python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
+          }
 
-      - name: Create Release
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.info.outputs.tag }}
-          name: GPT-SoVITS Windows Package ${{ steps.info.outputs.tag }}
+          tag_name: ${{ steps.pkg.outputs.tag }}
+          name: GPT-SoVITS Windows Package ${{ steps.pkg.outputs.tag }}
+          files: "*.7z*"
           body: |
-            ## GPT-SoVITS Windows Package
+            ## GPT-SoVITS Windows Package - ${{ matrix.torch_cuda }}
 
-            ### Download Links
+            ### Download from Hugging Face (Recommended, Faster)
 
-            #### Hugging Face (Recommended, Permanent Storage)
+            | File | Link |
+            |------|------|
+            ${{ matrix.torch_cuda == 'cu124' && format('| cu124 | [Download](https://huggingface.co/{0}/resolve/main/{1}.7z.001) |', env.HF_REPO, steps.pkg.outputs.name) || format('| cu128 | [Download](https://huggingface.co/{0}/resolve/main/{1}.7z.001) |', env.HF_REPO, steps.pkg.outputs.name) }}
 
-            | Version | CUDA | Download |
-            |---------|------|----------|
-            | cu124 | CUDA 12.4 | [GPT-SoVITS-${{ steps.info.outputs.date }}-cu124.7z](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.info.outputs.date }}-cu124.7z) |
-            | cu128 | CUDA 12.8 | [GPT-SoVITS-${{ steps.info.outputs.date }}-cu128.7z](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.info.outputs.date }}-cu128.7z) |
-
-            #### GitHub Artifacts (Backup, Expires in 90 days)
-
-            [Click here to download from Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            ### Usage
-
-            1. Download the `.7z` file matching your CUDA version
-            2. Extract and run `go-webui.bat`
-
-            ### CUDA Version Guide
-
-            - **cu124** - For older GPU drivers
-            - **cu128** - For latest GPU drivers (Recommended)
+            ### Split File Info
+            Files are split into 1GB volumes. Download all `.7z.001`, `.7z.002`, etc. and extract with 7-Zip.
           draft: false
           prerelease: false
         env:

@@ -150,6 +150,14 @@ Save-HFFolder "chinese-hubert-base" "$pretrainedDir\chinese-hubert-base"
 Write-Host "[INFO] Downloading chinese-roberta-wwm-ext-large..."
 Save-HFFolder "chinese-roberta-wwm-ext-large" "$pretrainedDir\chinese-roberta-wwm-ext-large"
 
+# Download v2Pro models
+Write-Host "[INFO] Downloading v2Pro..."
+Save-HFFolder "v2Pro" "$pretrainedDir\v2Pro"
+
+# Download s1v3.ckpt
+Write-Host "[INFO] Downloading s1v3.ckpt..."
+Invoke-WebRequest -Uri "$HF_BASE/s1v3.ckpt" -OutFile "$pretrainedDir\s1v3.ckpt"
+
 # Download G2PW Model
 Write-Host "[INFO] Downloading G2PW model..."
 $g2pwUrl = "https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2PWModel.zip"
@@ -197,11 +205,17 @@ Get-ChildItem "$srcDir" -Filter "*.ipynb" | Remove-Item -Force
 Set-Location ..
 $7zPath = "$pkgName.7z"
 
-Write-Host "[INFO] Compressing to $7zPath (this may take a while)..."
+Write-Host "[INFO] Compressing to $7zPath (split into 1GB volumes, fast mode)..."
 $start = Get-Date
-& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$srcDir" -m0=lzma2 -mx=9 -mmt=on -bsp1
+# mx=5 for faster compression, -v1g for 1GB split volumes
+& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$srcDir" -m0=lzma2 -mx=5 -mmt=on -v1g -bsp1
 $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
+
+# Count and list split files
+$splitFiles = Get-ChildItem -Filter "$pkgName.7z*"
+Write-Host "[INFO] Created $($splitFiles.Count) split file(s):"
+$splitFiles | ForEach-Object { Write-Host "  - $($_.Name) ($([math]::Round($_.Length / 1MB, 2)) MB)" }
 
 # Rename folder with retry (Windows sometimes holds file handles briefly)
 $renamed = Invoke-WithRetry -OperationName "Rename folder" -ScriptBlock {

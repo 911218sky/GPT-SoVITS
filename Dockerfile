@@ -33,7 +33,6 @@ ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
 RUN bash Docker/miniconda_install.sh
 
-# Add conda to PATH for subsequent RUN commands
 ENV PATH="/root/miniconda3/bin:$PATH"
 
 COPY extra-req.txt /workspace/GPT-SoVITS/
