@@ -48,11 +48,18 @@ run_pip_quiet() {
 }
 
 run_wget_quiet() {
-    if wget --tries=25 --wait=5 --read-timeout=40 -q --show-progress "$@" 2>&1; then
+    # Use --show-progress only if TTY is available, otherwise use quiet mode
+    local wget_opts="--tries=25 --wait=5 --read-timeout=40"
+    if [ -t 1 ]; then
+        wget_opts="$wget_opts -q --show-progress"
+    else
+        wget_opts="$wget_opts -nv"
+    fi
+    if wget $wget_opts "$@" 2>&1; then
         # tput may fail in non-TTY environments (like Docker), ignore errors
         (tput cuu1 && tput el) 2>/dev/null || true
     else
-        echo -e "${ERROR} Wget failed"
+        echo -e "${ERROR} Wget failed: $*"
         exit 1
     fi
 }
@@ -280,8 +287,8 @@ else
 fi
 
 if [ "$DOWNLOAD_UVR5" = "true" ]; then
-    if find -L "tools/uvr5/uvr5_weights" -mindepth 1 ! -name '.gitignore' | grep -q .; then
-        echo -e"${INFO}UVR5 Models Exists"
+    if [ -d "tools/uvr5/uvr5_weights" ] && find -L "tools/uvr5/uvr5_weights" -mindepth 1 ! -name '.gitignore' 2>/dev/null | grep -q .; then
+        echo -e "${INFO}UVR5 Models Exists"
         echo -e "${INFO}Skip Downloading UVR5 Models"
     else
         echo -e "${INFO}Downloading UVR5 Models..."
@@ -297,7 +304,7 @@ fi
 if [ "$USE_CUDA" = true ] && [ "$WORKFLOW" = false ]; then
     echo -e "${INFO}Checking For Nvidia Driver Installation..."
     if command -v nvidia-smi &>/dev/null; then
-        echo "${INFO}Nvidia Driver Founded"
+        echo -e "${INFO}Nvidia Driver Found"
     else
         echo -e "${WARNING}Nvidia Driver Not Found, Fallback to CPU"
         USE_CUDA=false
@@ -308,9 +315,9 @@ fi
 if [ "$USE_ROCM" = true ] && [ "$WORKFLOW" = false ]; then
     echo -e "${INFO}Checking For ROCm Installation..."
     if [ -d "/opt/rocm" ]; then
-        echo -e "${INFO}ROCm Founded"
-        if grep -qi "microsoft" /proc/version; then
-            echo -e "${INFO}WSL2 Founded"
+        echo -e "${INFO}ROCm Found"
+        if [ -f /proc/version ] && grep -qi "microsoft" /proc/version 2>/dev/null; then
+            echo -e "${INFO}WSL2 Found"
             IS_WSL=true
         else
             IS_WSL=false
