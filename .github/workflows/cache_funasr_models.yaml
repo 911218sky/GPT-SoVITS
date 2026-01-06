@@ -1,0 +1,78 @@
+name: Cache FunASR Models to Hugging Face
+
+on:
+  workflow_dispatch:
+
+env:
+  HF_MODELS_REPO: sky1218/GPT-SoVITS-Models
+
+jobs:
+  upload-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install modelscope huggingface_hub -q
+
+      - name: Download and Upload FunASR Models
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 << 'EOF'
+          import os
+          import shutil
+          from modelscope import snapshot_download
+          from huggingface_hub import HfApi, create_repo
+
+          # FunASR models to cache
+          models = [
+              'iic/speech_fsmn_vad_zh-cn-16k-common-pytorch',
+              'iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch',
+              'iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch'
+          ]
+
+          hf_repo = os.environ.get('HF_MODELS_REPO', 'sky1218/GPT-SoVITS-Models')
+          hf_token = os.environ.get('HF_TOKEN')
+
+          # Create HF repo if not exists
+          api = HfApi()
+          try:
+              create_repo(repo_id=hf_repo, token=hf_token, repo_type="model", exist_ok=True)
+              print(f"[INFO] Repo {hf_repo} ready")
+          except Exception as e:
+              print(f"[WARN] Repo creation: {e}")
+
+          # Download from ModelScope and upload to HF
+          for model_id in models:
+              model_name = model_id.split('/')[-1]
+              local_dir = f'./models/{model_name}'
+              
+              print(f'[INFO] Downloading {model_name} from ModelScope...')
+              snapshot_download(model_id, local_dir=local_dir)
+              print(f'[INFO] Downloaded {model_name}')
+              
+              # Upload to HF directly using model name as folder
+              print(f'[INFO] Uploading to HF: {model_name}')
+              api.upload_folder(
+                  folder_path=local_dir,
+                  path_in_repo=model_name,
+                  repo_id=hf_repo,
+                  token=hf_token
+              )
+              print(f'[INFO] Uploaded {model_name} to HF')
+              
+              # Clean up to save space
+              shutil.rmtree(local_dir)
+
+          print('[SUCCESS] All FunASR models cached to Hugging Face!')
+          EOF
