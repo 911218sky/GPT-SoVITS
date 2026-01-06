@@ -88,6 +88,13 @@ for model_name, modelscope_id in models:
 print('[INFO] All FunASR models downloaded successfully!')
 "
 
+# Download fast-langdetect model (lid.176.bin)
+echo "[INFO] Downloading fast-langdetect model..."
+mkdir -p GPT_SoVITS/pretrained_models/fast_langdetect
+curl -L -o GPT_SoVITS/pretrained_models/fast_langdetect/lid.176.bin \
+    "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+echo "[INFO] Downloaded fast-langdetect model"
+
 pip cache purge
 
 pip show torch

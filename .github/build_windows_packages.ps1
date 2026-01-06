@@ -222,6 +222,16 @@ Remove-Item $ffDir.FullName -Recurse -Force
 Write-Host "[INFO] Downloading NLTK data..."
 & $python -c "import nltk; nltk.download('averaged_perceptron_tagger_eng', quiet=True)"
 
+# Download fast-langdetect model (lid.176.bin)
+Write-Host "[INFO] Downloading fast-langdetect model..."
+$fastLangDetectDir = "$srcDir\GPT_SoVITS\pretrained_models\fast_langdetect"
+New-Item -ItemType Directory -Force -Path $fastLangDetectDir | Out-Null
+$lidModelUrl = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+$lidModelPath = "$fastLangDetectDir\lid.176.bin"
+Write-Host "[INFO] Downloading lid.176.bin (125MB)..."
+Invoke-WebRequest -Uri $lidModelUrl -OutFile $lidModelPath
+Write-Host "[INFO] Downloaded fast-langdetect model"
+
 # Download FunASR models (try HuggingFace cache first, fallback to ModelScope)
 Write-Host "[INFO] Downloading FunASR models..."
 & $pip install huggingface_hub modelscope -q --no-warn-script-location
