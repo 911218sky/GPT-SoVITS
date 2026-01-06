@@ -52,7 +52,6 @@ jobs:
           $suffix = "${{ github.event.inputs.suffix }}"
           $pkgName = "GPT-SoVITS-$date$suffix-${{ matrix.torch_cuda }}"
           echo "name=$pkgName" >> $env:GITHUB_OUTPUT
-          echo "tag=v$date$suffix-${{ matrix.torch_cuda }}" >> $env:GITHUB_OUTPUT
           echo "date=$date" >> $env:GITHUB_OUTPUT
           echo "suffix=$suffix" >> $env:GITHUB_OUTPUT
 
@@ -99,6 +98,30 @@ jobs:
           echo "date=$date" >> $GITHUB_OUTPUT
           echo "suffix=$suffix" >> $GITHUB_OUTPUT
 
+      - name: Split large files for GitHub Release
+        run: |
+          mkdir -p split_packages
+          cd packages
+
+          for file in *.7z; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file")
+              echo "Processing $file ($(numfmt --to=iec $size))"
+              
+              # If file > 1.9GB, split it
+              if [ $size -gt 1900000000 ]; then
+                echo "Splitting $file into 1.9GB parts..."
+                split -b 1900M -d --additional-suffix=.part "$file" "../split_packages/${file}."
+              else
+                cp "$file" "../split_packages/"
+              fi
+            fi
+          done
+
+          echo ""
+          echo "Split packages:"
+          ls -la ../split_packages/
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -107,14 +130,36 @@ jobs:
           body: |
             ## GPT-SoVITS Windows Packages ${{ steps.version.outputs.version }}
 
-            ### 📥 Download
+            ### 📥 Download Options
 
-            | Package | GitHub | Hugging Face |
-            |---------|--------|--------------|
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) |
-            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) |
+            #### Option 1: Hugging Face (Recommended - Single File)
 
-            > 💡 **GitHub Assets**: Download the .7z files directly from the Assets section below
+            | Package | Download Link |
+            |---------|---------------|
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | [⬇️ Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) |
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | [⬇️ Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) |
+
+            #### Option 2: GitHub Release (Split Files)
+
+            Download all `.part` files from the Assets below, then merge them:
+
+            **Windows (PowerShell):**
+            ```powershell
+            # For cu124
+            cmd /c copy /b GPT-SoVITS-*-cu124.7z.*.part GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z
+
+            # For cu128
+            cmd /c copy /b GPT-SoVITS-*-cu128.7z.*.part GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z
+            ```
+
+            **Linux/Mac:**
+            ```bash
+            # For cu124
+            cat GPT-SoVITS-*-cu124.7z.*.part > GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z
+
+            # For cu128
+            cat GPT-SoVITS-*-cu128.7z.*.part > GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z
+            ```
 
             ### 📋 Included in Both Packages
 
@@ -134,7 +179,7 @@ jobs:
             2. Run `go-webui.bat` to start WebUI
             3. Run `start_api.bat` to start API server
           files: |
-            packages/*.7z
+            split_packages/*
           draft: false
           prerelease: false
         env:

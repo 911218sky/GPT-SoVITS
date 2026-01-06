@@ -210,6 +210,25 @@ foreach ($file in $puncFiles) {
     Invoke-WebRequest -Uri $url -OutFile "$puncDir\$file"
 }
 
+# Download speech_paraformer model (ASR)
+Write-Host "[INFO] Downloading speech_paraformer-large..."
+$paraformerDir = "$asrModelsDir\speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+New-Item -ItemType Directory -Force -Path $paraformerDir | Out-Null
+$paraformerFiles = @(
+    "am.mvn",
+    "configuration.json",
+    "config.yaml",
+    "model.pt",
+    "seg_dict",
+    "tokens.json",
+    "README.md"
+)
+foreach ($file in $paraformerFiles) {
+    $url = "https://www.modelscope.cn/models/iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/resolve/master/$file"
+    Write-Host "  -> $file"
+    Invoke-WebRequest -Uri $url -OutFile "$paraformerDir\$file"
+}
+
 # === Download FFmpeg ===
 Write-Host "`n[6/8] Downloading FFmpeg..."
 $ffUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
