@@ -33,6 +33,9 @@ ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
 
 RUN bash Docker/miniconda_install.sh
 
+# Add conda to PATH for subsequent RUN commands
+ENV PATH="/root/miniconda3/bin:$PATH"
+
 COPY extra-req.txt /workspace/GPT-SoVITS/
 
 COPY requirements.txt /workspace/GPT-SoVITS/
@@ -45,7 +48,7 @@ EXPOSE 9871 9872 9873 9874 9880
 
 ENV PYTHONPATH="/workspace/GPT-SoVITS"
 
-RUN conda init bash && echo "conda activate base" >> ~/.bashrc
+RUN /root/miniconda3/bin/conda init bash && echo "conda activate base" >> ~/.bashrc
 
 WORKDIR /workspace
 
