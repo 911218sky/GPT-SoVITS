@@ -129,7 +129,7 @@ Download-HFFolder "chinese-roberta-wwm-ext-large" "$pretrainedDir\chinese-robert
 
 # Download G2PW Model
 Write-Host "[INFO] Downloading G2PW model..."
-$g2pwUrl = "https://paddlespeech.bj.bcebos.com/Parakeet/released_models/g2p/G2PWModel_1.1.zip"
+$g2pwUrl = "https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2PWModel.zip"
 $g2pwZip = "$tmpDir\G2PWModel.zip"
 Invoke-WebRequest -Uri $g2pwUrl -OutFile $g2pwZip
 Expand-Archive -Path $g2pwZip -DestinationPath "$srcDir\GPT_SoVITS\text" -Force
