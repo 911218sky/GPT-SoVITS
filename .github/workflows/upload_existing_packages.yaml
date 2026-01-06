@@ -1,0 +1,193 @@
+name: Upload Existing Packages to Zenodo
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run ID of the build workflow that created the packages"
+        required: true
+        default: "20741258015"
+      date:
+        description: "Date suffix (e.g., 0106)"
+        required: true
+        default: "0106"
+      suffix:
+        description: "Package name suffix (optional)"
+        required: false
+        default: ""
+
+env:
+  HF_REPO: sky1218/GPT-SoVITS-Packages
+
+jobs:
+  upload-zenodo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts from previous run
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.inputs.run_id }}
+          path: packages
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: |
+          echo "Downloaded packages:"
+          ls -la packages/
+
+      - name: Generate version info
+        id: version
+        run: |
+          date="${{ github.event.inputs.date }}"
+          suffix="${{ github.event.inputs.suffix }}"
+          echo "version=v$date$suffix" >> $GITHUB_OUTPUT
+          echo "date=$date" >> $GITHUB_OUTPUT
+          echo "suffix=$suffix" >> $GITHUB_OUTPUT
+
+      - name: Upload to Zenodo
+        id: zenodo
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          echo "Creating new Zenodo deposition..."
+
+          # Create a new deposition
+          DEPOSITION_RESPONSE=$(curl -s -X POST "https://zenodo.org/api/deposit/depositions" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+
+          DEPOSITION_ID=$(echo $DEPOSITION_RESPONSE | jq -r '.id')
+          BUCKET_URL=$(echo $DEPOSITION_RESPONSE | jq -r '.links.bucket')
+
+          echo "Created deposition ID: $DEPOSITION_ID"
+          echo "Bucket URL: $BUCKET_URL"
+
+          # Upload all .7z files using Python for better memory handling
+          pip install requests -q
+
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import requests
+          from pathlib import Path
+
+          bucket_url = os.environ['BUCKET_URL']
+          token = os.environ['ZENODO_TOKEN']
+
+          packages_dir = Path('packages')
+
+          for file_path in packages_dir.glob('*.7z'):
+              filename = file_path.name
+              filesize = file_path.stat().st_size
+              
+              print(f"Uploading {filename} ({filesize:,} bytes) to Zenodo...")
+              
+              # Upload with streaming to avoid loading entire file into memory
+              with open(file_path, 'rb') as f:
+                  response = requests.put(
+                      f"{bucket_url}/{filename}",
+                      data=f,
+                      headers={
+                          'Authorization': f'Bearer {token}',
+                          'Content-Type': 'application/octet-stream'
+                      },
+                      timeout=3600  # 1 hour timeout for large files
+                  )
+              
+              if response.status_code in [200, 201]:
+                  print(f"✓ Uploaded {filename}")
+              else:
+                  print(f"✗ Failed to upload {filename}: {response.status_code}")
+                  print(response.text)
+                  exit(1)
+
+          print("All files uploaded successfully!")
+          PYTHON_SCRIPT
+
+          # Update metadata
+          echo "Updating deposition metadata..."
+          METADATA=$(cat <<EOF
+          {
+            "metadata": {
+              "title": "GPT-SoVITS Windows Package $VERSION",
+              "upload_type": "software",
+              "description": "GPT-SoVITS Windows Package with Python 3.11 + PyTorch. This package includes both CUDA 12.4 and CUDA 12.8 versions. Contains all pretrained models (v2Pro, sv, G2PW), FunASR models, and FFmpeg.",
+              "creators": [
+                {"name": "GPT-SoVITS Team"}
+              ],
+              "keywords": ["GPT-SoVITS", "TTS", "Text-to-Speech", "Voice Cloning", "AI", "PyTorch", "CUDA"],
+              "license": "MIT",
+              "version": "$VERSION"
+            }
+          }
+          EOF
+          )
+
+          curl -s -X PUT "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$METADATA"
+
+          # Publish the deposition
+          echo "Publishing to Zenodo..."
+          PUBLISH_RESPONSE=$(curl -s -X POST "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID/actions/publish" \
+            -H "Authorization: Bearer $ZENODO_TOKEN")
+
+          DOI=$(echo $PUBLISH_RESPONSE | jq -r '.doi')
+          RECORD_ID=$(echo $PUBLISH_RESPONSE | jq -r '.id')
+          ZENODO_URL="https://zenodo.org/records/$RECORD_ID"
+
+          echo "Published to Zenodo!"
+          echo "DOI: $DOI"
+          echo "URL: $ZENODO_URL"
+
+          # Set outputs
+          echo "doi=$DOI" >> $GITHUB_OUTPUT
+          echo "url=$ZENODO_URL" >> $GITHUB_OUTPUT
+          echo "record_id=$RECORD_ID" >> $GITHUB_OUTPUT
+
+      - name: Create Combined Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: GPT-SoVITS ${{ steps.version.outputs.version }}
+          body: |
+            ## GPT-SoVITS Windows Packages ${{ steps.version.outputs.version }}
+
+            ### 📥 Download
+
+            | Package | GitHub | Hugging Face | Zenodo |
+            |---------|--------|--------------|--------|
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu124.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
+            | GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z | ⬇️ Assets | [Download](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.version.outputs.date }}${{ steps.version.outputs.suffix }}-cu128.7z) | [Zenodo](${{ steps.zenodo.outputs.url }}) |
+
+            > 💡 **GitHub Assets**: Download the .7z files directly from the Assets section below
+
+            [![DOI](https://zenodo.org/badge/DOI/${{ steps.zenodo.outputs.doi }}.svg)](https://doi.org/${{ steps.zenodo.outputs.doi }})
+
+            ### 📋 Included in Both Packages
+
+            - Python 3.11 + PyTorch
+            - All pretrained models (including v2Pro, sv, G2PW)
+            - FunASR models (VAD, Punctuation)
+            - FFmpeg
+
+            ### 🔧 CUDA Versions
+
+            - **cu124**: For NVIDIA GPUs with CUDA 12.4
+            - **cu128**: For NVIDIA GPUs with CUDA 12.8
+
+            ### 🚀 Usage
+
+            1. Download and extract the 7z file
+            2. Run `go-webui.bat` to start WebUI
+            3. Run `start_api.bat` to start API server
+          files: |
+            packages/*.7z
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
