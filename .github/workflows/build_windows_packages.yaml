@@ -12,6 +12,9 @@ on:
         required: false
         default: ""
 
+env:
+  HF_REPO: sky1218/GPT-SoVITS-Packages
+
 jobs:
   build:
     runs-on: windows-latest
@@ -47,6 +50,16 @@ jobs:
           path: "*.7z"
           retention-days: 90
 
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install huggingface_hub
+          $file = Get-ChildItem -Filter "*.7z" | Select-Object -First 1
+          Write-Host "Uploading $($file.Name) to Hugging Face..."
+          python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
+        shell: pwsh
+
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -61,7 +74,7 @@ jobs:
           SUFFIX="${{ github.event.inputs.suffix }}"
           TAG="v${DATE}${SUFFIX}"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "run_url=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -73,26 +86,26 @@ jobs:
 
             ### 📦 下載連結
 
-            由於檔案大小超過 GitHub Release 的 2GB 限制，請從 **Actions Artifacts** 下載：
+            #### Hugging Face（推薦，永久保存）
 
-            👉 **[點此下載 Artifacts](${{ steps.info.outputs.run_url }})**
+            | 版本 | CUDA | 下載連結 |
+            |------|------|----------|
+            | cu124 | CUDA 12.4 | [GPT-SoVITS-${{ steps.info.outputs.date }}-cu124.7z](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.info.outputs.date }}-cu124.7z) |
+            | cu128 | CUDA 12.8 | [GPT-SoVITS-${{ steps.info.outputs.date }}-cu128.7z](https://huggingface.co/${{ env.HF_REPO }}/resolve/main/GPT-SoVITS-${{ steps.info.outputs.date }}-cu128.7z) |
 
-            滾動到頁面底部的 **Artifacts** 區塊，選擇對應版本下載：
+            #### GitHub Artifacts（備用，90天後過期）
 
-            | 版本 | CUDA | 說明 |
-            |------|------|------|
-            | `GPT-SoVITS-cu124` | CUDA 12.4 | 適用於較舊的顯卡驅動 |
-            | `GPT-SoVITS-cu128` | CUDA 12.8 | 適用於最新顯卡驅動 |
+            👉 [點此前往 Artifacts 下載頁面](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
             ### 🚀 使用方式
 
             1. 下載對應你 CUDA 版本的 `.7z` 檔案
             2. 解壓縮後執行 `go-webui.bat`
 
-            ### ⚠️ 注意事項
+            ### 💡 CUDA 版本選擇
 
-            - Artifacts 會保留 **90 天**，請及時下載
-            - 下載需要登入 GitHub 帳號
+            - **cu124** - 適用於較舊的顯卡驅動
+            - **cu128** - 適用於最新顯卡驅動（推薦）
           draft: false
           prerelease: false
         env:
