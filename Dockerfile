@@ -1,9 +1,9 @@
 ARG CUDA_VERSION=12.6
 ARG TORCH_BASE=full
 
-FROM xxxxrt666/torch-base:cu${CUDA_VERSION}-${TORCH_BASE}
+FROM nvidia/cuda:${CUDA_VERSION}.0-runtime-ubuntu22.04
 
-LABEL maintainer="XXXXRT"
+LABEL maintainer="sky1218"
 LABEL version="V4"
 LABEL description="Docker image for GPT-SoVITS"
 
