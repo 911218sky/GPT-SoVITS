@@ -61,6 +61,15 @@ jobs:
               snapshot_download(model_id, local_dir=local_dir)
               print(f'[INFO] Downloaded {model_name}')
               
+              # Remove files that may cause HF validation errors
+              import glob
+              for pattern in ['README*.md', '*.png', '*.jpg', '*.gif', 'fig/*', 'example/*']:
+                  for f in glob.glob(os.path.join(local_dir, pattern), recursive=True):
+                      try:
+                          os.remove(f)
+                          print(f'[INFO] Removed {f}')
+                      except: pass
+              
               # Upload to HF directly using model name as folder
               print(f'[INFO] Uploading to HF: {model_name}')
               api.upload_folder(
