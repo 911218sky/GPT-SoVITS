@@ -120,6 +120,10 @@ jobs:
           echo "Created deposition ID: $DEPOSITION_ID"
           echo "Bucket URL: $BUCKET_URL"
 
+          # Export variables for Python script
+          export BUCKET_URL
+          export DEPOSITION_ID
+
           # Upload all .7z files using Python for better memory handling
           pip install requests -q
 
