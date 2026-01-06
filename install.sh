@@ -229,16 +229,19 @@ else
     fi
 fi
 
-echo -e "${INFO}Installing FFmpeg & CMake..."
-run_conda_quiet ffmpeg cmake make
-echo -e "${SUCCESS}FFmpeg & CMake Installed"
-
-echo -e "${INFO}Installing unzip..."
-run_conda_quiet unzip
-echo -e "${SUCCESS}unzip Installed"
+echo -e "${INFO}Installing FFmpeg, CMake & unzip..."
+run_conda_quiet ffmpeg cmake make unzip
+echo -e "${SUCCESS}FFmpeg, CMake & unzip Installed"
 
 # Refresh command hash table to pick up newly installed commands
 hash -r
+
+# Verify unzip is available
+if ! command -v unzip &>/dev/null; then
+    echo -e "${WARNING}unzip not found in PATH, using conda prefix"
+    export PATH="$CONDA_PREFIX/bin:$PATH"
+    hash -r
+fi
 
 if [ "$USE_HF" = "true" ]; then
     echo -e "${INFO}Download Model From HuggingFace"
