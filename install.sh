@@ -237,6 +237,9 @@ echo -e "${INFO}Installing unzip..."
 run_conda_quiet unzip
 echo -e "${SUCCESS}unzip Installed"
 
+# Refresh command hash table to pick up newly installed commands
+hash -r
+
 if [ "$USE_HF" = "true" ]; then
     echo -e "${INFO}Download Model From HuggingFace"
     PRETRINED_URL="https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/pretrained_models.zip"
