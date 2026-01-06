@@ -26,6 +26,12 @@ $pkgName = "$pkgName-$cuda"
 $srcDir = $PWD
 $tmpDir = "$srcDir\tmp"
 
+# Set short temp path to avoid Windows path length issues
+$env:TMPDIR = "C:\tmp"
+$env:TEMP = "C:\tmp"
+$env:TMP = "C:\tmp"
+New-Item -ItemType Directory -Force -Path "C:\tmp" | Out-Null
+
 # HuggingFace base URL (no auth required for public models)
 $HF_BASE = "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main"
 
