@@ -113,6 +113,11 @@ jobs:
           pip install modelscope -q
           $file = Get-Item "*.tar.zst"
           $fileName = $file.Name
+          
+          # Create temp folder with only the file to upload
+          New-Item -ItemType Directory -Force -Path "ms_upload" | Out-Null
+          Copy-Item $fileName "ms_upload/"
+          
           Write-Host "Uploading $fileName to ModelScope..."
           python -c @"
           import os
@@ -121,13 +126,17 @@ jobs:
           api = HubApi()
           api.login(os.environ['MS_TOKEN'])
           
-          api.upload(
-              model_id='${{ env.MS_REPO }}',
-              path_or_fileobj='$fileName',
-              path_in_repo='$fileName',
-              commit_message='Upload $fileName'
-          )
-          print('[INFO] Uploaded $fileName to ModelScope')
+          try:
+              api.push_model(
+                  model_id='${{ env.MS_REPO }}',
+                  model_dir='ms_upload',
+                  revision='master',
+                  commit_message='Upload $fileName'
+              )
+              print('[INFO] Uploaded $fileName to ModelScope')
+          except Exception as e:
+              print(f'[WARN] ModelScope upload failed: {e}')
+              print('[INFO] You can manually upload the file from HuggingFace')
           "@
 
       - name: Save Release Info
