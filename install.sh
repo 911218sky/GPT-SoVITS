@@ -41,7 +41,8 @@ run_conda_quiet() {
 
 run_pip_quiet() {
     local output
-    output=$(pip install "$@" 2>&1) || {
+    # 使用 python -m pip 確保用的是當前環境的 pip
+    output=$(python -m pip install "$@" 2>&1) || {
         echo -e "${ERROR} Pip install failed:\n$output"
         exit 1
     }
@@ -307,20 +308,25 @@ if [ "$DOWNLOAD_UVR5" = "true" ]; then
 fi
 
 # Install PyTorch based on device selection
+# PyTorch version configuration
+TORCH_VERSION="2.7.1"
+TORCHVISION_VERSION="0.22.1"
+TORCHAUDIO_VERSION="2.7.1"
+
 if [ "$USE_CUDA" = true ]; then
     if [ "$CUDA" = 128 ]; then
-        echo -e "${INFO}Installing PyTorch For CUDA 12.8..."
-        run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/cu128"
+        echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CUDA 12.8..."
+        run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu128"
     elif [ "$CUDA" = 126 ]; then
-        echo -e "${INFO}Installing PyTorch For CUDA 12.6..."
-        run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/cu126"
+        echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CUDA 12.6..."
+        run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu126"
     fi
 elif [ "$USE_ROCM" = true ]; then
-    echo -e "${INFO}Installing PyTorch For ROCm 6.2..."
-    run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/rocm6.2"
+    echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For ROCm 6.2..."
+    run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/rocm6.2"
 elif [ "$USE_CPU" = true ]; then
-    echo -e "${INFO}Installing PyTorch For CPU..."
-    run_pip_quiet torch torchaudio torchcodec --index-url "https://download.pytorch.org/whl/cpu"
+    echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CPU..."
+    run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cpu"
 fi
 echo -e "${SUCCESS}PyTorch Installed"
 

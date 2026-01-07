@@ -1,108 +1,43 @@
 #!/bin/bash
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-
-cd "$SCRIPT_DIR" || exit 1
-
-cd .. || exit 1
+#
+# GPT-SoVITS Docker 安裝腳本
+# 呼叫 install.sh 並下載 Docker 專用的額外模型
+#
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+cd "$SCRIPT_DIR/.." || exit 1
+
+# 啟動 conda 環境
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate base
 
-mkdir -p GPT_SoVITS/text
-
+# 呼叫主安裝腳本（PyTorch、依賴、預訓練模型都在這裡處理）
+echo "[INFO] Running main install script..."
 bash install.sh --device "CU${CUDA_VERSION//./}" --source HF
 
-# Download FunASR models (try HuggingFace cache first, fallback to ModelScope)
+# === Docker 專用：下載額外模型 ===
+
+# 安裝模型下載工具
+echo "[INFO] Installing model download tools..."
+python -m pip install huggingface_hub modelscope -q
+
+# 下載 FunASR 模型
 echo "[INFO] Downloading FunASR models..."
-pip install huggingface_hub modelscope -q
+python3 "$SCRIPT_DIR/download_models.py"
 
-python3 -c "
-import os
-import sys
-
-models_dir = 'tools/asr/models'
-os.makedirs(models_dir, exist_ok=True)
-
-# Model definitions: (model_name, modelscope_id)
-# HF cache path will be: sky1218/GPT-SoVITS-Models/{model_name}/
-models = [
-    ('speech_fsmn_vad_zh-cn-16k-common-pytorch', 'iic/speech_fsmn_vad_zh-cn-16k-common-pytorch'),
-    ('punc_ct-transformer_zh-cn-common-vocab272727-pytorch', 'iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'),
-    ('speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch', 'iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch'),
-]
-
-HF_CACHE_REPO = 'sky1218/GPT-SoVITS-Models'
-
-def download_from_hf(model_name, local_dir):
-    \"\"\"Try downloading from user's HuggingFace cache (global CDN)\"\"\"
-    try:
-        from huggingface_hub import snapshot_download
-        print(f'[INFO] Trying HuggingFace cache for {model_name}...')
-        snapshot_download(
-            repo_id=HF_CACHE_REPO,
-            allow_patterns=f'{model_name}/*',
-            local_dir=local_dir + '_tmp'
-        )
-        # Move from subfolder to target
-        import shutil
-        src = os.path.join(local_dir + '_tmp', model_name)
-        if os.path.exists(src) and os.listdir(src):
-            if os.path.exists(local_dir):
-                shutil.rmtree(local_dir)
-            shutil.move(src, local_dir)
-            shutil.rmtree(local_dir + '_tmp', ignore_errors=True)
-            print(f'[INFO] Downloaded {model_name} from HuggingFace cache')
-            return True
-    except Exception as e:
-        print(f'[INFO] HuggingFace cache not available: {e}')
-    return False
-
-def download_from_modelscope(model_name, modelscope_id, local_dir):
-    \"\"\"Download from ModelScope (primary source)\"\"\"
-    try:
-        from modelscope import snapshot_download
-        print(f'[INFO] Downloading {model_name} from ModelScope...')
-        snapshot_download(modelscope_id, local_dir=local_dir)
-        print(f'[INFO] Downloaded {model_name} from ModelScope')
-        return True
-    except Exception as e:
-        print(f'[ERROR] ModelScope download failed: {e}')
-    return False
-
-for model_name, modelscope_id in models:
-    local_dir = os.path.join(models_dir, model_name)
-    
-    if os.path.exists(local_dir) and os.listdir(local_dir):
-        print(f'[INFO] {model_name} already exists, skipping')
-        continue
-    
-    # Try HuggingFace cache first, then ModelScope
-    if not download_from_hf(model_name, local_dir):
-        if not download_from_modelscope(model_name, modelscope_id, local_dir):
-            print(f'[ERROR] Failed to download {model_name}')
-            sys.exit(1)
-
-print('[INFO] All FunASR models downloaded successfully!')
-"
-
-# Download fast-langdetect model (lid.176.bin)
+# 下載 fast-langdetect 模型
 echo "[INFO] Downloading fast-langdetect model..."
 mkdir -p GPT_SoVITS/pretrained_models/fast_langdetect
 curl -L -o GPT_SoVITS/pretrained_models/fast_langdetect/lid.176.bin \
     "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
-echo "[INFO] Downloaded fast-langdetect model"
 
-pip cache purge
-
-pip show torch
-
-rm -rf /tmp/* /var/tmp/*
-
-rm -rf "$HOME/miniconda3/pkgs"
-
+# === 清理快取（Docker image 優化）===
+echo "[INFO] Cleaning up caches..."
+python -m pip cache purge
+rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
+rm -rf "$HOME/miniconda3/pkgs" "$HOME/.conda" "$HOME/.cache"
 mkdir -p "$HOME/miniconda3/pkgs"
 
-rm -rf /root/.conda /root/.cache
+echo "[INFO] Installation completed!"
