@@ -8,7 +8,7 @@ This document describes the available workflows and required setup.
 |----------|-------------|---------|
 | `build_windows_packages.yaml` | Build Windows packages and upload to HuggingFace/ModelScope | Manual |
 | `cache_funasr_models.yaml` | Cache FunASR models from ModelScope to HuggingFace | Manual |
-| `docker-publish.yaml` | Build and publish Docker image | Manual/Push |
+| `docker-publish.yaml` | Build and publish Docker image | Manual |
 
 ## Required Secrets
 
@@ -16,8 +16,10 @@ Go to **Settings → Secrets and variables → Actions** to add these secrets:
 
 | Secret | Required By | Description | How to Get |
 |--------|-------------|-------------|------------|
-| `HF_TOKEN` | All workflows | HuggingFace API token | [HuggingFace Settings](https://huggingface.co/settings/tokens) → New token (Write access) |
+| `HF_TOKEN` | `build_windows_packages.yaml`, `cache_funasr_models.yaml` | HuggingFace API token | [HuggingFace Settings](https://huggingface.co/settings/tokens) → New token (Write access) |
 | `MS_TOKEN` | `build_windows_packages.yaml` | ModelScope API token | [ModelScope Settings](https://www.modelscope.cn/my/myaccesstoken) → Create token |
+| `DOCKERHUB_USERNAME` | `docker-publish.yaml` | Docker Hub username | Your Docker Hub username |
+| `DOCKERHUB_TOKEN` | `docker-publish.yaml` | Docker Hub access token | [Docker Hub Settings](https://hub.docker.com/settings/security) → New Access Token |
 
 ## Workflow Details
 
@@ -62,7 +64,12 @@ gh workflow run cache_funasr_models.yaml
 
 **File:** `docker-publish.yaml`
 
-Builds and publishes Docker image to GitHub Container Registry.
+Builds and publishes Docker image to Docker Hub with CUDA support.
+
+**Images built:**
+- `sky1218/gpt-sovits:cu126` - CUDA 12.6
+- `sky1218/gpt-sovits:cu128` - CUDA 12.8
+- `sky1218/gpt-sovits:latest` - Default (CUDA 12.6)
 
 **Run:**
 ```bash
@@ -76,10 +83,16 @@ gh workflow run docker-publish.yaml
 3. Run workflows from Actions tab or using GitHub CLI
 
 ```bash
-# Set secrets
+# Set secrets for Windows packages
 gh secret set HF_TOKEN --body "hf_xxxxx"
 gh secret set MS_TOKEN --body "ms-xxxxx"
 
-# Run build
+# Set secrets for Docker
+gh secret set DOCKERHUB_USERNAME --body "your_username"
+gh secret set DOCKERHUB_TOKEN --body "dckr_pat_xxxxx"
+
+# Run workflows
 gh workflow run build_windows_packages.yaml
+gh workflow run docker-publish.yaml
+gh workflow run cache_funasr_models.yaml
 ```
