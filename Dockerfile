@@ -34,7 +34,7 @@ ENV PATH="/root/miniconda3/bin:$PATH"
 COPY extra-req.txt requirements.txt install.sh /workspace/GPT-SoVITS/
 RUN bash Docker/install_wrapper.sh
 
-RUN conda clean -afy && \
+RUN /root/miniconda3/bin/micromamba clean -afy && \
     pip cache purge && \
     rm -rf /root/.cache/pip /root/.cache/huggingface && \
     find /root/miniconda3 -name "*.pyc" -delete && \
@@ -60,8 +60,8 @@ COPY --from=builder /root/miniconda3 /root/miniconda3
 ENV PATH="/root/miniconda3/bin:$PATH"
 ENV PYTHONPATH="/workspace/GPT-SoVITS"
 
-RUN /root/miniconda3/bin/conda init bash && \
-    echo "conda activate base" >> ~/.bashrc
+# Setup shell environment (micromamba doesn't need init, just source the profile)
+RUN echo 'source /root/miniconda3/etc/profile.d/conda.sh' >> ~/.bashrc
 
 WORKDIR /workspace/GPT-SoVITS
 
