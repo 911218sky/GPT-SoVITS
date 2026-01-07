@@ -301,7 +301,8 @@ Write-Host "[INFO] Downloading FunASR models..."
 $asrModelsDir = "$srcDir\tools\asr\models"
 New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
 
-$HF_CACHE_REPO = "sky1218/GPT-SoVITS-Models"
+# Use environment variable or default
+$HF_CACHE_REPO = if ($env:HF_MODELS_REPO) { $env:HF_MODELS_REPO } else { "sky1218/GPT-SoVITS-Models" }
 
 # Create Python download script
 $downloadScript = @"

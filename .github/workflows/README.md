@@ -32,6 +32,9 @@ Builds Windows packages with CUDA support and uploads to HuggingFace and ModelSc
 **Inputs:**
 - `date` (optional): Date suffix for package name (default: current date MMDD)
 - `suffix` (optional): Additional suffix for package name
+- `hf_repo` (optional): HuggingFace repo for packages (default: `sky1218/GPT-SoVITS-Packages`)
+- `ms_repo` (optional): ModelScope repo for packages (default: `sky1218/GPT-SoVITS-Packages`)
+- `hf_models_repo` (optional): HuggingFace repo for models cache (default: `sky1218/GPT-SoVITS-Models`)
 
 **What it does:**
 1. Creates Python environment with micromamba
@@ -44,6 +47,9 @@ Builds Windows packages with CUDA support and uploads to HuggingFace and ModelSc
 **Run:**
 ```bash
 gh workflow run build_windows_packages.yaml
+
+# With custom repos
+gh workflow run build_windows_packages.yaml -f hf_repo="your/repo" -f ms_repo="your/repo"
 ```
 
 ### 2. Cache FunASR Models

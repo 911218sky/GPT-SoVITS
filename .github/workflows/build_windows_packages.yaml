@@ -11,10 +11,18 @@ on:
         description: "Package name suffix (optional)"
         required: false
         default: ""
-
-env:
-  HF_REPO: sky1218/GPT-SoVITS-Packages
-  MS_REPO: sky1218/GPT-SoVITS-Packages
+      hf_repo:
+        description: "HuggingFace repo for packages (e.g. sky1218/GPT-SoVITS-Packages)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Packages"
+      ms_repo:
+        description: "ModelScope repo for packages (e.g. sky1218/GPT-SoVITS-Packages)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Packages"
+      hf_models_repo:
+        description: "HuggingFace repo for models cache (e.g. sky1218/GPT-SoVITS-Models)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Models"
 
 jobs:
   build:
@@ -28,6 +36,9 @@ jobs:
       TORCH_CUDA: ${{ matrix.torch_cuda }}
       DATE_SUFFIX: ${{ github.event.inputs.date }}
       PKG_SUFFIX: ${{ github.event.inputs.suffix }}
+      HF_REPO: ${{ github.event.inputs.hf_repo }}
+      MS_REPO: ${{ github.event.inputs.ms_repo }}
+      HF_MODELS_REPO: ${{ github.event.inputs.hf_models_repo }}
 
     steps:
       - name: Checkout
