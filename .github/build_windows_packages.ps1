@@ -241,9 +241,11 @@ Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" -ErrorAction Sile
 
 # Clean up dist-info directories (keep only essential files)
 $distInfoDirs = Get-ChildItem $sitePackages -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue
-foreach ($dir in $distInfoDirs) {
-    if ($dir) {
-        Get-ChildItem $dir.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+if ($distInfoDirs) {
+    foreach ($dir in $distInfoDirs) {
+        if ($dir -and $dir.FullName -and (Test-Path $dir.FullName)) {
+            Get-ChildItem $dir.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
