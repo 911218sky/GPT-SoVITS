@@ -43,7 +43,7 @@ jobs:
       - name: Move Package to Workspace
         shell: pwsh
         run: |
-          Move-Item ../*.7z ./
+          Move-Item ../*.tar.zst ./
 
       - name: Generate package info
         id: pkg
@@ -63,7 +63,7 @@ jobs:
         shell: pwsh
         run: |
           pip install huggingface_hub -q
-          $file = Get-Item "*.7z"
+          $file = Get-Item "*.tar.zst"
           Write-Host "Uploading $($file.Name) to Hugging Face..."
           python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
           Write-Host "Upload completed!"
@@ -122,8 +122,8 @@ jobs:
                 TAG_NAME="v${DATE}${SUFFIX}"
             fi
             
-            LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.7z"
-            echo "| $NAME.7z | [⬇️ Download]($LINK) |" >> release_body.md
+            LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.tar.zst"
+            echo "| $NAME.tar.zst | [⬇️ Download]($LINK) |" >> release_body.md
           done
 
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
