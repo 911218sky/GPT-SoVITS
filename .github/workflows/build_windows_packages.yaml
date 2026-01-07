@@ -110,31 +110,25 @@ jobs:
             Write-Host "[WARN] MS_TOKEN not set, skipping ModelScope upload"
             exit 0
           }
-          
+          pip install modelscope -q
           $file = Get-Item "*.tar.zst"
           $fileName = $file.Name
-          Write-Host "Uploading $fileName to ModelScope using Git LFS..."
+          Write-Host "Uploading $fileName to ModelScope..."
+          python -c @"
+          import os
+          from modelscope.hub.api import HubApi
           
-          # Install Git LFS
-          git lfs install
+          api = HubApi()
+          api.login(os.environ['MS_TOKEN'])
           
-          # Configure git
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # Clone ModelScope repo (use token as password)
-          $repoUrl = "https://git:$env:MS_TOKEN@www.modelscope.cn/${{ env.MS_REPO }}.git"
-          git clone --depth 1 $repoUrl ms_repo
-          cd ms_repo
-          
-          # Copy file and track with LFS
-          Copy-Item "..\$fileName" .
-          git lfs track "*.tar.zst"
-          git add .gitattributes "$fileName"
-          git commit -m "Upload $fileName"
-          git push
-          
-          Write-Host "[INFO] Uploaded $fileName to ModelScope"
+          api.upload(
+              model_id='${{ env.MS_REPO }}',
+              path_or_fileobj='$fileName',
+              path_in_repo='$fileName',
+              commit_message='Upload $fileName'
+          )
+          print('[INFO] Uploaded $fileName to ModelScope')
+          "@
 
       - name: Save Release Info
         shell: pwsh
