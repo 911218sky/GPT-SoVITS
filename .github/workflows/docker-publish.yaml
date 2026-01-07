@@ -2,6 +2,11 @@ name: Build and Publish Docker Image
 
 on:
   workflow_dispatch:
+    inputs:
+      docker_repo:
+        description: "Docker Hub repository (e.g. sky1218/gpt-sovits)"
+        required: false
+        default: "sky1218/gpt-sovits"
 
 jobs:
   build-amd64:
@@ -72,8 +77,8 @@ jobs:
             CUDA_VERSION=${{ matrix.cuda_version }}
           outputs: type=image,compression=zstd,compression-level=3,force-compression=true
           tags: |
-            sky1218/gpt-sovits:${{ matrix.tag_prefix }}
-            sky1218/gpt-sovits:latest-${{ matrix.tag_prefix }}
+            ${{ github.event.inputs.docker_repo }}:${{ matrix.tag_prefix }}
+            ${{ github.event.inputs.docker_repo }}:latest-${{ matrix.tag_prefix }}
 
   create-default:
     runs-on: ubuntu-latest
@@ -92,5 +97,5 @@ jobs:
       - name: Create Default Tag
         run: |
           docker buildx imagetools create \
-            --tag sky1218/gpt-sovits:latest \
-            sky1218/gpt-sovits:cu126
+            --tag ${{ github.event.inputs.docker_repo }}:latest \
+            ${{ github.event.inputs.docker_repo }}:cu126

@@ -72,14 +72,20 @@ gh workflow run cache_funasr_models.yaml
 
 Builds and publishes Docker image to Docker Hub with CUDA support.
 
+**Inputs:**
+- `docker_repo` (optional): Docker Hub repository (default: `sky1218/gpt-sovits`)
+
 **Images built:**
-- `sky1218/gpt-sovits:cu126` - CUDA 12.6
-- `sky1218/gpt-sovits:cu128` - CUDA 12.8
-- `sky1218/gpt-sovits:latest` - Default (CUDA 12.6)
+- `{docker_repo}:cu126` - CUDA 12.6
+- `{docker_repo}:cu128` - CUDA 12.8
+- `{docker_repo}:latest` - Default (CUDA 12.6)
 
 **Run:**
 ```bash
 gh workflow run docker-publish.yaml
+
+# With custom repo
+gh workflow run docker-publish.yaml -f docker_repo="your-username/your-repo"
 ```
 
 ## Quick Setup
