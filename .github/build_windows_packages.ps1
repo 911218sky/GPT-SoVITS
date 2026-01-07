@@ -343,15 +343,64 @@ if __name__ == "__main__":
 
 $downloadScript | Out-File "$tmpDir\download_model.py" -Encoding UTF8
 
+# Download from single HuggingFace repo with subfolder
+$downloadSubfolderScript = @"
+import os
+import sys
+from pathlib import Path
+
+def download_subfolder(repo_id, subfolder, local_dir):
+    """Download subfolder from HuggingFace repo"""
+    try:
+        from huggingface_hub import snapshot_download
+        
+        print(f"[INFO] Downloading {subfolder} from {repo_id}...")
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=local_dir,
+            repo_type="model",
+            allow_patterns=[f"{subfolder}/*"],
+            local_dir_use_symlinks=False
+        )
+        
+        # Move files from subfolder to local_dir root
+        subfolder_path = Path(local_dir) / subfolder
+        if subfolder_path.exists():
+            for item in subfolder_path.iterdir():
+                target = Path(local_dir) / item.name
+                if target.exists():
+                    if target.is_dir():
+                        import shutil
+                        shutil.rmtree(target)
+                    else:
+                        target.unlink()
+                item.rename(target)
+            subfolder_path.rmdir()
+        
+        print(f"[INFO] Downloaded {subfolder}")
+        return True
+    except Exception as e:
+        print(f"[WARN] Failed to download {subfolder}: {e}")
+        return False
+
+if __name__ == "__main__":
+    repo_id = sys.argv[1]
+    subfolder = sys.argv[2]
+    local_dir = sys.argv[3]
+    
+    Path(local_dir).mkdir(parents=True, exist_ok=True)
+    download_subfolder(repo_id, subfolder, local_dir)
+"@
+
+$downloadSubfolderScript | Out-File "$tmpDir\download_subfolder.py" -Encoding UTF8
+
 $funasr_models = @(
-    @{ name = "speech_fsmn_vad_zh-cn-16k-common-pytorch"; hf_id = "$HF_CACHE_REPO/speech_fsmn_vad_zh-cn-16k-common-pytorch" },
-    @{ name = "punc_ct-transformer_zh-cn-common-vocab272727-pytorch"; hf_id = "$HF_CACHE_REPO/punc_ct-transformer_zh-cn-common-vocab272727-pytorch" },
-    @{ name = "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"; hf_id = "$HF_CACHE_REPO/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch" }
+    "speech_fsmn_vad_zh-cn-16k-common-pytorch",
+    "punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
+    "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
 )
 
-foreach ($model in $funasr_models) {
-    $modelName = $model.name
-    $hfId = $model.hf_id
+foreach ($modelName in $funasr_models) {
     $localDir = "$asrModelsDir\$modelName"
     
     if ((Test-Path $localDir) -and (Get-ChildItem $localDir -ErrorAction SilentlyContinue)) {
@@ -359,8 +408,8 @@ foreach ($model in $funasr_models) {
         continue
     }
     
-    # Use Python to download
-    & $python "$tmpDir\download_model.py" $modelName $hfId $localDir
+    # Use Python to download subfolder from HuggingFace
+    & $python "$tmpDir\download_subfolder.py" $HF_CACHE_REPO $modelName $localDir
 }
 
 Write-Host "[INFO] All FunASR models downloaded successfully!"
