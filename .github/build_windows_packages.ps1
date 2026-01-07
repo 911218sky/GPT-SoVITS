@@ -171,12 +171,13 @@ Write-Host "`n=========================================="
 Write-Host "  PHASE 2: Setting up Environment"
 Write-Host "=========================================="
 
-# === Install uv and Create Python Environment ===
-Write-Host "`n[6/9] Installing uv and setting up Python environment..."
+# === Install uv and Download Portable Python ===
+Write-Host "`n[6/9] Installing uv and setting up portable Python environment..."
 $runtimePath = "$srcDir\runtime"
 $envPath = "$runtimePath\env"
 
 New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
+New-Item -ItemType Directory -Force -Path $envPath | Out-Null
 
 # Download and install uv
 Write-Host "[INFO] Downloading uv..."
@@ -194,17 +195,36 @@ if (-not (Test-Path $uv)) {
     exit 1
 }
 
-# Create Python environment with uv
-Write-Host "[INFO] Creating Python 3.11 environment at: $envPath"
-& $uv venv $envPath --python 3.11
+# Download portable Python (python-build-standalone)
+Write-Host "[INFO] Downloading portable Python 3.11..."
+$pythonVersion = "3.11.12"
+$pythonRelease = "20251217"
+$pythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/$pythonRelease/cpython-$pythonVersion+$pythonRelease-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
+$pythonArchive = "$tmpDir\python.tar.gz"
 
-$python = "$envPath\Scripts\python.exe"
+Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonArchive
+
+Write-Host "[INFO] Extracting portable Python..."
+# Extract tar.gz
+& tar -xzf $pythonArchive -C $tmpDir
+
+# Move python folder contents to env
+$pythonExtracted = "$tmpDir\python"
+if (Test-Path $pythonExtracted) {
+    Get-ChildItem $pythonExtracted | Move-Item -Destination $envPath -Force
+}
+Remove-Item $pythonArchive -Force -ErrorAction SilentlyContinue
+Remove-Item $pythonExtracted -Recurse -Force -ErrorAction SilentlyContinue
+
+$python = "$envPath\python.exe"
 
 # Verify python exists
 if (-not (Test-Path $python)) {
     Write-Error "python not found at $python"
     exit 1
 }
+
+Write-Host "[INFO] Portable Python installed at: $python"
 
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
