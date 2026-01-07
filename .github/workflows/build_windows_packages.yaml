@@ -44,28 +44,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Clean up pre-installed Conda/Mamba
-        shell: pwsh
-        run: |
-          # Remove Miniconda/Conda installations
-          Remove-Item "C:\Miniconda" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:CONDA" -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Remove user config files
-          Remove-Item "$env:USERPROFILE\.condarc" -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:USERPROFILE\.mambarc" -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:USERPROFILE\.mamba" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$env:USERPROFILE\micromamba" -Recurse -Force -ErrorAction SilentlyContinue
-          
-          # Clear environment variables
-          echo "CONDA=" >> $env:GITHUB_ENV
-          echo "CONDA_PREFIX=" >> $env:GITHUB_ENV
-          echo "CONDA_DEFAULT_ENV=" >> $env:GITHUB_ENV
-          echo "CONDA_EXE=" >> $env:GITHUB_ENV
-          echo "MAMBA_ROOT_PREFIX=" >> $env:GITHUB_ENV
-          
-          Write-Host "[INFO] Cleaned up pre-installed Conda/Mamba"
-
       - name: Build Package
         shell: pwsh
         env:
