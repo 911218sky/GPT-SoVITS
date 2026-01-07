@@ -173,10 +173,10 @@ Write-Host "=========================================="
 
 # === Install Micromamba ===
 Write-Host "`n[6/9] Installing Micromamba..."
-$condaPath = "$srcDir\runtime"
-$mambaExe = "$condaPath\micromamba.exe"
+$runtimePath = "$srcDir\runtime"
+$mambaExe = "$runtimePath\micromamba.exe"
 
-New-Item -ItemType Directory -Force -Path $condaPath | Out-Null
+New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
 Invoke-WebRequest "https://micro.mamba.pm/api/micromamba/win-64/latest" -OutFile "$tmpDir\micromamba.tar.bz2"
 
 # Extract micromamba
@@ -189,7 +189,7 @@ Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 # Setup micromamba environment - clear ALL possible config locations
 # GitHub Actions Windows runner has Miniconda preinstalled, which can interfere
 
-# Clear all possible micromamba/conda config files
+# Clear all possible micromamba config files
 $configPaths = @(
     "$env:USERPROFILE\.mambarc",
     "$env:USERPROFILE\.condarc",
@@ -214,7 +214,7 @@ $env:CONDA_DEFAULT_ENV = $null
 $env:CONDA_EXE = $null
 
 # Use --prefix to create environment at specific path (avoids root prefix issues)
-$envPath = "$condaPath\env"
+$envPath = "$runtimePath\env"
 Write-Host "[DEBUG] Creating environment at: $envPath"
 & $mambaExe create --prefix $envPath python=3.11 -c conda-forge -y -q
 & $mambaExe clean -afy 2>$null | Out-Null
@@ -225,8 +225,8 @@ $python = "$envPath\python.exe"
 # Verify pip exists
 if (-not (Test-Path $pip)) {
     Write-Error "pip not found at $pip"
-    Write-Host "[DEBUG] Listing $condaPath contents:"
-    Get-ChildItem $condaPath -Recurse -Depth 2 | Select-Object FullName
+    Write-Host "[DEBUG] Listing $runtimePath contents:"
+    Get-ChildItem $runtimePath -Recurse -Depth 2 | Select-Object FullName
     exit 1
 }
 
@@ -254,8 +254,8 @@ Write-Host "`n[8/9] Installing dependencies..."
 Write-Host "[INFO] Cleaning up caches..."
 & $pip cache purge
 & $mambaExe clean -afy | Out-Null
-Remove-Item "$condaPath\pkgs" -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path "$condaPath\pkgs" | Out-Null
+Remove-Item "$runtimePath\pkgs" -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path "$runtimePath\pkgs" | Out-Null
 Remove-Item "$env:USERPROFILE\.cache" -Recurse -Force -ErrorAction SilentlyContinue
 
 # Remove unnecessary files from site-packages
