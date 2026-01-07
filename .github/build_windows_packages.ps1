@@ -234,12 +234,17 @@ Remove-Item "$env:USERPROFILE\.cache" -Recurse -Force -ErrorAction SilentlyConti
 
 # Remove unnecessary files from site-packages
 $sitePackages = "$envPath\Lib\site-packages"
-Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Include "*.dist-info" -Directory | ForEach-Object {
-    Get-ChildItem $_.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Clean up dist-info directories (keep only essential files)
+$distInfoDirs = Get-ChildItem $sitePackages -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue
+foreach ($dir in $distInfoDirs) {
+    if ($dir) {
+        Get-ChildItem $dir.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # Remove Triton (not used on Windows)
@@ -248,31 +253,10 @@ Remove-Item "$sitePackages\triton*" -Recurse -Force -ErrorAction SilentlyContinu
 # Remove unnecessary CUDA files from PyTorch
 $torchLib = "$sitePackages\torch\lib"
 if (Test-Path $torchLib) {
-    Get-ChildItem $torchLib -Filter "*.dll" | Where-Object { 
+    Get-ChildItem $torchLib -Filter "*.dll" -ErrorAction SilentlyContinue | Where-Object { 
         $_.Name -match "nvrtc-builtins"
     } | Remove-Item -Force -ErrorAction SilentlyContinue
 }
-
-# Remove ModelScope cache files
-Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-
-# Remove Triton (not used on Windows)
-Remove-Item "$sitePackages\triton*" -Recurse -Force -ErrorAction SilentlyContinue
-
-# Remove unnecessary CUDA files from PyTorch
-$torchLib = "$sitePackages\torch\lib"
-if (Test-Path $torchLib) {
-    Get-ChildItem $torchLib -Filter "*.dll" | Where-Object { 
-        $_.Name -match "nvrtc-builtins"
-    } | Remove-Item -Force -ErrorAction SilentlyContinue
-}
-
-# Remove ModelScope cache files
-Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 # Extract FFmpeg
 Write-Host "[INFO] Extracting FFmpeg..."
@@ -280,7 +264,6 @@ Expand-Archive $ffZip -DestinationPath $tmpDir -Force
 $ffDir = Get-ChildItem -Directory "$tmpDir" | Where-Object { $_.Name -like "ffmpeg*" } | Select-Object -First 1
 Copy-Item "$($ffDir.FullName)\bin\ffmpeg.exe" "$envPath" -Force
 Copy-Item "$($ffDir.FullName)\bin\ffprobe.exe" "$envPath" -Force
-Remove-Item $ffZip
 Remove-Item $ffDir.FullName -Recurse -Force
 
 # Download NLTK Data
@@ -371,6 +354,14 @@ foreach ($model in $funasr_models) {
 }
 
 Write-Host "[INFO] All FunASR models downloaded successfully!"
+
+# Clean up ModelScope cache files
+Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Clean up FFmpeg zip (downloaded earlier)
+Remove-Item $ffZip -Force -ErrorAction SilentlyContinue
 
 # ============================================
 # PHASE 3: Package

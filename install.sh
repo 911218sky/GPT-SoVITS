@@ -271,6 +271,7 @@ if [ ! -d "GPT_SoVITS/pretrained_models/sv" ]; then
     rm -rf pretrained_models.zip
     run_wget_quiet "$PRETRINED_URL"
 
+    mkdir -p GPT_SoVITS
     unzip -q -o pretrained_models.zip -d GPT_SoVITS
     rm -rf pretrained_models.zip
     echo -e "${SUCCESS}Pretrained Models Downloaded"
@@ -284,6 +285,7 @@ if [ ! -d "GPT_SoVITS/text/G2PWModel" ]; then
     rm -rf G2PWModel.zip
     run_wget_quiet "$G2PW_URL"
 
+    mkdir -p GPT_SoVITS/text
     unzip -q -o G2PWModel.zip -d GPT_SoVITS/text
     rm -rf G2PWModel.zip
     echo -e "${SUCCESS}G2PWModel Downloaded"
