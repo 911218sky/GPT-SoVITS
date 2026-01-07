@@ -95,23 +95,23 @@ jobs:
           MS_TOKEN: ${{ secrets.MS_TOKEN }}
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace("${{ env.MS_TOKEN }}")) {
+          if ([string]::IsNullOrWhiteSpace("$env:MS_TOKEN")) {
             Write-Host "[WARN] MS_TOKEN not set, skipping ModelScope upload"
             exit 0
           }
           pip install modelscope -q
           $file = Get-Item "*.tar.zst"
           Write-Host "Uploading $($file.Name) to ModelScope..."
-          python -c "
-from modelscope.hub.api import HubApi
-api = HubApi()
-api.login('${{ env.MS_TOKEN }}')
-api.push_model(
-    model_id='${{ env.MS_REPO }}',
-    model_dir='.',
-    commit_message='Upload Windows package ${{ steps.pkg.outputs.name }}'
-)
-"
+          python -c @"
+          from modelscope.hub.api import HubApi
+          api = HubApi()
+          api.login('$env:MS_TOKEN')
+          api.push_model(
+              model_id='${{ env.MS_REPO }}',
+              model_dir='.',
+              commit_message='Upload Windows package ${{ steps.pkg.outputs.name }}'
+          )
+          "@
 
       - name: Save Release Info
         shell: pwsh
@@ -149,10 +149,10 @@ api.push_model(
           echo "" >> release_body.md
           echo "This release contains the Windows package for GPT-SoVITS." >> release_body.md
           echo "" >> release_body.md
-          echo "### 📥 Download Options (Hugging Face)" >> release_body.md
+          echo "### 📥 Download Options" >> release_body.md
           echo "" >> release_body.md
-          echo "| Package | Download Link |" >> release_body.md
-          echo "|---------|---------------|" >> release_body.md
+          echo "| Package | Hugging Face | ModelScope |" >> release_body.md
+          echo "|---------|--------------|------------|" >> release_body.md
 
           TAG_NAME=""
           for file in release_infos/release_info_*.txt; do
@@ -164,8 +164,9 @@ api.push_model(
                 TAG_NAME="v${DATE}${SUFFIX}"
             fi
             
-            LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.tar.zst"
-            echo "| $NAME.tar.zst | [⬇️ Download]($LINK) |" >> release_body.md
+            HF_LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.tar.zst"
+            MS_LINK="https://www.modelscope.cn/models/${{ env.MS_REPO }}/resolve/master/${NAME}.tar.zst"
+            echo "| ${NAME}.tar.zst | [⬇️ HuggingFace]($HF_LINK) | [⬇️ ModelScope]($MS_LINK) |" >> release_body.md
           done
 
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
