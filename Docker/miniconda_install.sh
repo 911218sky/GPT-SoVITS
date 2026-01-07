@@ -1,36 +1,63 @@
 #!/bin/bash
 #
-# Miniconda 安裝腳本
-# 只負責安裝 Miniconda 和 Python
-# 其他工具由 install.sh 統一管理
+# Micromamba 安裝腳本
 #
 
 set -e
 
-# 如果已安裝則跳過
-if [ -d "$HOME/miniconda3" ]; then
-    echo "[INFO] Miniconda already installed, skipping"
+MAMBA_ROOT="$HOME/miniconda3"
+
+if [ -d "$MAMBA_ROOT" ]; then
+    echo "[INFO] Micromamba already installed, skipping"
     exit 0
 fi
 
-echo "[INFO] Downloading Miniconda..."
-wget -q --tries=25 --wait=5 --read-timeout=40 \
-    -O /tmp/miniconda.sh \
-    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+echo "[INFO] Downloading Micromamba..."
+curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj -C /tmp bin/micromamba
 
-echo "[INFO] Installing Miniconda..."
-bash /tmp/miniconda.sh -b -p "$HOME/miniconda3" > /tmp/miniconda-install.log 2>&1
-if [ $? -ne 0 ]; then
-    echo "[ERROR] Failed to install Miniconda"
-    tail -n 50 /tmp/miniconda-install.log
-    exit 1
-fi
+echo "[INFO] Installing Micromamba..."
+mkdir -p "$MAMBA_ROOT/bin"
+mv /tmp/bin/micromamba "$MAMBA_ROOT/bin/"
+rm -rf /tmp/bin
 
-# 清理安裝檔
-rm -f /tmp/miniconda.sh /tmp/miniconda-install.log
+export MAMBA_ROOT_PREFIX="$MAMBA_ROOT"
+MAMBA="$MAMBA_ROOT/bin/micromamba"
 
-# 安裝 Python（其他工具由 install.sh 處理）
+# 初始化 shell
+$MAMBA shell init -s bash -p "$MAMBA_ROOT" > /dev/null
+
+# 安裝 Python
 echo "[INFO] Installing Python 3.11..."
-"$HOME/miniconda3/bin/conda" install python=3.11 -q -y
+$MAMBA create -n base -y -q
+$MAMBA install -n base python=3.11 -c conda-forge -y -q
 
-echo "[INFO] Miniconda setup completed"
+# 建立相容性符號連結
+ln -sf "$MAMBA_ROOT/envs/base/bin/python" "$MAMBA_ROOT/bin/python"
+ln -sf "$MAMBA_ROOT/envs/base/bin/pip" "$MAMBA_ROOT/bin/pip"
+
+# 建立 conda wrapper script (install 指令自動加上 -n base)
+cat > "$MAMBA_ROOT/bin/conda" << 'WRAPPER'
+#!/bin/bash
+MAMBA_ROOT="$HOME/miniconda3"
+MAMBA="$MAMBA_ROOT/bin/micromamba"
+
+# 如果第一個參數是 install，自動加上 -n base
+if [ "$1" = "install" ]; then
+    shift
+    exec "$MAMBA" install -n base "$@"
+else
+    exec "$MAMBA" "$@"
+fi
+WRAPPER
+chmod +x "$MAMBA_ROOT/bin/conda"
+
+# 建立 conda.sh 相容檔案
+mkdir -p "$MAMBA_ROOT/etc/profile.d"
+cat > "$MAMBA_ROOT/etc/profile.d/conda.sh" << 'EOF'
+export MAMBA_ROOT_PREFIX="$HOME/miniconda3"
+export PATH="$MAMBA_ROOT_PREFIX/envs/base/bin:$MAMBA_ROOT_PREFIX/bin:$PATH"
+eval "$($MAMBA_ROOT_PREFIX/bin/micromamba shell hook -s bash)"
+micromamba activate base
+EOF
+
+echo "[INFO] Micromamba setup completed"
