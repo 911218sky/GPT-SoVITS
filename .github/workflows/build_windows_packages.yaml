@@ -65,8 +65,7 @@ jobs:
           pip install huggingface_hub -q
           $file = Get-Item "*.tar.zst"
           Write-Host "Uploading $($file.Name) to Hugging Face..."
-          python -c "from huggingface_hub import HfApi; api = HfApi(); api.upload_file(path_or_fileobj='$($file.Name)', path_in_repo='$($file.Name)', repo_id='${{ env.HF_REPO }}', token='${{ secrets.HF_TOKEN }}')"
-          Write-Host "Upload completed!"
+          python scripts/upload_to_hf.py "$($file.Name)" "${{ env.HF_REPO }}"
 
       - name: Save Release Info
         shell: pwsh
@@ -109,15 +108,12 @@ jobs:
           echo "| Package | Download Link |" >> release_body.md
           echo "|---------|---------------|" >> release_body.md
 
-          # Read all release info files
           TAG_NAME=""
           for file in release_infos/release_info_*.txt; do
-            # Read lines: 1=Name, 2=Date, 3=Suffix
             NAME=$(sed '1q;d' "$file" | tr -d '\r')
             DATE=$(sed '2q;d' "$file" | tr -d '\r')
             SUFFIX=$(sed '3q;d' "$file" | tr -d '\r')
             
-            # Construct Tag Name (e.g. v0106)
             if [ -z "$TAG_NAME" ]; then
                 TAG_NAME="v${DATE}${SUFFIX}"
             fi
