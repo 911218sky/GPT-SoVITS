@@ -177,6 +177,7 @@ $runtimePath = "$srcDir\runtime"
 $envPath = "$runtimePath\env"
 
 New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
+New-Item -ItemType Directory -Force -Path $envPath | Out-Null
 
 # Download and install uv
 Write-Host "[INFO] Downloading uv..."
@@ -194,11 +195,27 @@ if (-not (Test-Path $uv)) {
     exit 1
 }
 
-# Create venv with uv (downloads Python automatically)
-Write-Host "[INFO] Creating Python 3.11 virtual environment..."
-& $uv venv $envPath --python 3.11
+# Download standalone Python
+Write-Host "[INFO] Downloading standalone Python 3.11..."
+$pythonVersion = "3.11.12"
+$pythonRelease = "20251217"
+$pythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/$pythonRelease/cpython-$pythonVersion+$pythonRelease-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
+$pythonArchive = "$tmpDir\python.tar.gz"
 
-$python = "$envPath\Scripts\python.exe"
+Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonArchive
+
+Write-Host "[INFO] Extracting Python..."
+& tar -xzf $pythonArchive -C $tmpDir
+
+# Move python folder contents to env
+$pythonExtracted = "$tmpDir\python"
+if (Test-Path $pythonExtracted) {
+    Get-ChildItem $pythonExtracted | Move-Item -Destination $envPath -Force
+}
+Remove-Item $pythonArchive -Force -ErrorAction SilentlyContinue
+Remove-Item $pythonExtracted -Recurse -Force -ErrorAction SilentlyContinue
+
+$python = "$envPath\python.exe"
 
 # Verify python exists
 if (-not (Test-Path $python)) {
@@ -206,18 +223,13 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-# Save base Python path for later (to make portable after installing packages)
-$pyvenvCfg = "$envPath\pyvenv.cfg"
-$basePythonDir = $null
-if (Test-Path $pyvenvCfg) {
-    $homeMatch = Select-String -Path $pyvenvCfg -Pattern "^home\s*=\s*(.+)$"
-    if ($homeMatch) {
-        $basePythonDir = $homeMatch.Matches[0].Groups[1].Value.Trim()
-        Write-Host "[INFO] Base Python at: $basePythonDir"
-    }
+# Remove EXTERNALLY-MANAGED marker to allow pip install
+$externallyManaged = "$envPath\Lib\EXTERNALLY-MANAGED"
+if (Test-Path $externallyManaged) {
+    Remove-Item $externallyManaged -Force
 }
 
-Write-Host "[INFO] Python environment created at: $envPath"
+Write-Host "[INFO] Standalone Python installed at: $python"
 
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
@@ -449,36 +461,6 @@ if ($gitFiles) {
 
 # Clean up FFmpeg zip (downloaded earlier)
 Remove-Item $ffZip -Force -ErrorAction SilentlyContinue
-
-# ============================================
-# Make venv portable (after all packages installed)
-# ============================================
-Write-Host "[INFO] Making environment portable..."
-if ($basePythonDir -and (Test-Path $basePythonDir)) {
-    # Copy python DLLs
-    Copy-Item "$basePythonDir\*.dll" "$envPath\Scripts\" -Force -ErrorAction SilentlyContinue
-    
-    # Copy DLLs folder
-    if (Test-Path "$basePythonDir\DLLs") {
-        Copy-Item "$basePythonDir\DLLs" "$envPath\" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    
-    # Copy Lib folder (standard library, excluding site-packages)
-    if (Test-Path "$basePythonDir\Lib") {
-        Get-ChildItem "$basePythonDir\Lib" -Exclude "site-packages" | ForEach-Object {
-            Copy-Item $_.FullName "$envPath\Lib\" -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-    
-    Write-Host "[INFO] Copied base Python files for portability"
-}
-
-# Remove pyvenv.cfg to make fully portable
-$pyvenvCfg = "$envPath\pyvenv.cfg"
-if (Test-Path $pyvenvCfg) {
-    Remove-Item $pyvenvCfg -Force
-    Write-Host "[INFO] Removed pyvenv.cfg"
-}
 
 # ============================================
 # PHASE 3: Package
