@@ -171,52 +171,49 @@ Write-Host "`n=========================================="
 Write-Host "  PHASE 2: Setting up Environment"
 Write-Host "=========================================="
 
-# === Install Micromamba ===
-Write-Host "`n[6/9] Installing Micromamba..."
+# === Install uv and Create Python Environment ===
+Write-Host "`n[6/9] Installing uv and setting up Python environment..."
 $runtimePath = "$srcDir\runtime"
-$mambaExe = "$runtimePath\micromamba.exe"
+$envPath = "$runtimePath\env"
 
 New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
-Invoke-WebRequest "https://micro.mamba.pm/api/micromamba/win-64/latest" -OutFile "$tmpDir\micromamba.tar.bz2"
 
-# Extract micromamba
-tar -xf "$tmpDir\micromamba.tar.bz2" -C $tmpDir
-Copy-Item "$tmpDir\Library\bin\micromamba.exe" $mambaExe -Force
-Remove-Item "$tmpDir\micromamba.tar.bz2" -Force -ErrorAction SilentlyContinue
-Remove-Item "$tmpDir\Library" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
+# Download and install uv
+Write-Host "[INFO] Downloading uv..."
+$uvInstaller = "$tmpDir\uv-installer.ps1"
+Invoke-WebRequest -Uri "https://astral.sh/uv/install.ps1" -OutFile $uvInstaller
+$env:UV_INSTALL_DIR = $runtimePath
+& powershell -ExecutionPolicy Bypass -File $uvInstaller
+Remove-Item $uvInstaller -Force -ErrorAction SilentlyContinue
 
-# Setup micromamba environment
-# Use --prefix to create environment at specific path (avoids root prefix issues)
-$envPath = "$runtimePath\env"
-Write-Host "[DEBUG] Creating environment at: $envPath"
-& $mambaExe create --prefix $envPath python=3.11 -c conda-forge -y -q
-& $mambaExe clean -afy 2>$null | Out-Null
+$uv = "$runtimePath\uv.exe"
 
-$pip = "$envPath\Scripts\pip.exe"
-$python = "$envPath\python.exe"
-$uv = "$envPath\Scripts\uv.exe"
-
-# Verify pip exists
-if (-not (Test-Path $pip)) {
-    Write-Error "pip not found at $pip"
-    Write-Host "[DEBUG] Listing $runtimePath contents:"
-    Get-ChildItem $runtimePath -Recurse -Depth 2 | Select-Object FullName
+# Verify uv exists
+if (-not (Test-Path $uv)) {
+    Write-Error "uv not found at $uv"
     exit 1
 }
 
-# Install uv for faster package installation
-Write-Host "[INFO] Installing uv..."
-& $pip install uv -q --no-warn-script-location
+# Create Python environment with uv
+Write-Host "[INFO] Creating Python 3.11 environment at: $envPath"
+& $uv venv $envPath --python 3.11
+
+$python = "$envPath\Scripts\python.exe"
+
+# Verify python exists
+if (-not (Test-Path $python)) {
+    Write-Error "python not found at $python"
+    exit 1
+}
 
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
 switch ($cuda) {
     "cu126" {
-        & $uv pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
     }
     "cu128" {
-        & $uv pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
     }
     default {
         Write-Error "Unsupported CUDA version: $cuda"
@@ -232,49 +229,51 @@ $reqContent = Get-Content "requirements.txt" | Where-Object { $_ -notmatch "^--n
 $reqContent | Out-File "requirements_optimized.txt" -Encoding UTF8
 
 # Install with uv (much faster than pip)
-& $uv pip install -r requirements_optimized.txt
-& $uv pip install -r extra-req.txt
+& $uv pip install --python $python -r requirements_optimized.txt
+& $uv pip install --python $python -r extra-req.txt
 
 Remove-Item "requirements_optimized.txt" -Force -ErrorAction SilentlyContinue
 
 # Cleanup caches to reduce package size
 Write-Host "[INFO] Cleaning up caches..."
 & $uv cache clean
-& $mambaExe clean -afy | Out-Null
-Remove-Item "$runtimePath\pkgs" -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path "$runtimePath\pkgs" | Out-Null
 Remove-Item "$env:USERPROFILE\.cache" -Recurse -Force -ErrorAction SilentlyContinue
 
 # Remove unnecessary files from site-packages
 $sitePackages = "$envPath\Lib\site-packages"
 
-# Remove .pyc and .pyo files
-$pycFiles = Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" -ErrorAction SilentlyContinue
-if ($pycFiles) {
-    $pycFiles | Remove-Item -Force -ErrorAction SilentlyContinue
-}
+# Check if site-packages exists (uv structure)
+if (-not (Test-Path $sitePackages)) {
+    Write-Host "[INFO] site-packages not found at expected location, skipping cleanup"
+} else {
+    # Remove .pyc and .pyo files
+    $pycFiles = Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" -ErrorAction SilentlyContinue
+    if ($pycFiles) {
+        $pycFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
 
-# Remove __pycache__ directories
-$pycacheDirs = Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
-if ($pycacheDirs) {
-    $pycacheDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-}
+    # Remove __pycache__ directories
+    $pycacheDirs = Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+    if ($pycacheDirs) {
+        $pycacheDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
-# Remove test directories
-$testDirs = Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" -ErrorAction SilentlyContinue
-if ($testDirs) {
-    $testDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-}
+    # Remove test directories
+    $testDirs = Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" -ErrorAction SilentlyContinue
+    if ($testDirs) {
+        $testDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
-$testDir = Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" -ErrorAction SilentlyContinue
-if ($testDir) {
-    $testDir | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-}
+    $testDir = Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" -ErrorAction SilentlyContinue
+    if ($testDir) {
+        $testDir | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
-# Remove Triton (not used on Windows)
-$tritonDirs = Get-ChildItem "$sitePackages" -Directory -Filter "triton*" -ErrorAction SilentlyContinue
-if ($tritonDirs) {
-    $tritonDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    # Remove Triton (not used on Windows)
+    $tritonDirs = Get-ChildItem "$sitePackages" -Directory -Filter "triton*" -ErrorAction SilentlyContinue
+    if ($tritonDirs) {
+        $tritonDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # Extract FFmpeg
@@ -301,7 +300,7 @@ Write-Host "[INFO] Downloaded fast-langdetect model"
 
 # Download FunASR models using Python
 Write-Host "[INFO] Downloading FunASR models..."
-& $uv pip install "huggingface_hub[hf_xet]" -q
+& $uv pip install --python $python "huggingface_hub[hf_xet]" -q
 
 $asrModelsDir = "$srcDir\tools\asr\models"
 New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
