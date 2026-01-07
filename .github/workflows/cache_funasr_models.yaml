@@ -2,9 +2,11 @@ name: Cache FunASR Models to Hugging Face
 
 on:
   workflow_dispatch:
-
-env:
-  HF_MODELS_REPO: sky1218/GPT-SoVITS-Models
+    inputs:
+      hf_repo:
+        description: "HuggingFace repo to upload models (e.g. sky1218/GPT-SoVITS-Models)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Models"
 
 jobs:
   upload-models:
@@ -27,6 +29,6 @@ jobs:
       - name: Download and Upload FunASR Models
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_MODELS_REPO: ${{ env.HF_MODELS_REPO }}
+          HF_MODELS_REPO: ${{ github.event.inputs.hf_repo }}
         run: |
           python3 scripts/cache_funasr_to_hf.py
