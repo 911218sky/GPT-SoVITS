@@ -159,7 +159,7 @@ $g2pwUrl = "https://huggingface.co/XXXXRT/GPT-SoVITS-Pretrained/resolve/main/G2P
 $g2pwZip = "$tmpDir\G2PWModel.zip"
 Invoke-WebRequest -Uri $g2pwUrl -OutFile $g2pwZip
 Expand-Archive -Path $g2pwZip -DestinationPath "$srcDir\GPT_SoVITS\text" -Force
-Remove-Item $g2pwZip
+Remove-Item $g2pwZip -Force -ErrorAction SilentlyContinue
 
 Write-Host "`n[INFO] All resources downloaded!"
 
@@ -182,7 +182,7 @@ Invoke-WebRequest "https://micro.mamba.pm/api/micromamba/win-64/latest" -OutFile
 # Extract micromamba
 tar -xf "$tmpDir\micromamba.tar.bz2" -C $tmpDir
 Copy-Item "$tmpDir\Library\bin\micromamba.exe" $mambaExe -Force
-Remove-Item "$tmpDir\micromamba.tar.bz2" -Force
+Remove-Item "$tmpDir\micromamba.tar.bz2" -Force -ErrorAction SilentlyContinue
 Remove-Item "$tmpDir\Library" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -230,7 +230,7 @@ $reqContent | Out-File "requirements_optimized.txt" -Encoding UTF8
 & $pip install -r requirements_optimized.txt --no-warn-script-location -v
 & $pip install -r extra-req.txt --no-warn-script-location -v
 
-Remove-Item "requirements_optimized.txt" -Force
+Remove-Item "requirements_optimized.txt" -Force -ErrorAction SilentlyContinue
 
 # Cleanup caches to reduce package size
 Write-Host "[INFO] Cleaning up caches..."
@@ -280,7 +280,10 @@ if ($distInfoDirs) {
 }
 
 # Remove Triton (not used on Windows)
-Remove-Item "$sitePackages\triton*" -Recurse -Force -ErrorAction SilentlyContinue
+$tritonDirs = Get-ChildItem "$sitePackages" -Directory -Filter "triton*" -ErrorAction SilentlyContinue
+if ($tritonDirs) {
+    $tritonDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # Extract FFmpeg
 Write-Host "[INFO] Extracting FFmpeg..."
@@ -288,7 +291,7 @@ Expand-Archive $ffZip -DestinationPath $tmpDir -Force
 $ffDir = Get-ChildItem -Directory "$tmpDir" | Where-Object { $_.Name -like "ffmpeg*" } | Select-Object -First 1
 Copy-Item "$($ffDir.FullName)\bin\ffmpeg.exe" "$envPath" -Force
 Copy-Item "$($ffDir.FullName)\bin\ffprobe.exe" "$envPath" -Force
-Remove-Item $ffDir.FullName -Recurse -Force
+Remove-Item $ffDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
 
 # Download NLTK Data
 Write-Host "[INFO] Downloading NLTK data..."
@@ -340,7 +343,7 @@ foreach ($model in $funasr_models) {
         & $huggingface_cli download $HF_CACHE_REPO --include "$modelName/*" --local-dir $tmpDir_hf --quiet 2>$null
         $srcPath = "$tmpDir_hf\$modelName"
         if ((Test-Path $srcPath) -and (Get-ChildItem $srcPath -ErrorAction SilentlyContinue)) {
-            if (Test-Path $localDir) { Remove-Item $localDir -Recurse -Force }
+            if (Test-Path $localDir) { Remove-Item $localDir -Recurse -Force -ErrorAction SilentlyContinue }
             Move-Item $srcPath $localDir -Force
             Remove-Item $tmpDir_hf -Recurse -Force -ErrorAction SilentlyContinue
             Write-Host "[INFO] Downloaded $modelName from HuggingFace cache"
@@ -443,7 +446,7 @@ if (Test-Path $junctionName) {
         cmd /c rmdir "$junctionName"
     }
     else {
-        Remove-Item "$junctionName" -Recurse -Force
+        Remove-Item "$junctionName" -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 cmd /c mklink /J "$junctionName" "$junctionTarget"
@@ -465,8 +468,8 @@ if (-not (Test-Path $zstdPath)) {
     Invoke-WebRequest -Uri $zstdUrl -OutFile $zstdZip
     Expand-Archive -Path $zstdZip -DestinationPath $zstdDir -Force
     Copy-Item "$zstdDir\zstd-v1.5.6-win64\zstd.exe" $zstdPath -Force
-    Remove-Item $zstdZip -Force
-    Remove-Item "$zstdDir\zstd-v1.5.6-win64" -Recurse -Force
+    Remove-Item $zstdZip -Force -ErrorAction SilentlyContinue
+    Remove-Item "$zstdDir\zstd-v1.5.6-win64" -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "[INFO] zstd downloaded and ready"
 }
 
