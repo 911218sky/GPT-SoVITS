@@ -127,9 +127,9 @@ jobs:
           api.login(os.environ['MS_TOKEN'])
           
           try:
-              api.push_model(
-                  model_id='${{ env.MS_REPO }}',
-                  model_dir='ms_upload',
+              api.upload_folder(
+                  repo_id='${{ env.MS_REPO }}',
+                  folder_path='ms_upload',
                   revision='master',
                   commit_message='Upload $fileName'
               )
