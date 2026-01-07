@@ -340,30 +340,8 @@ foreach ($model in $funasr_models) {
         Write-Host "[INFO] HuggingFace cache not available"
     }
     
-    # Fallback to ModelScope
     if (-not $downloaded) {
-        for ($i = 1; $i -le 5; $i++) {
-            try {
-                Write-Host "[INFO] Downloading $modelName from ModelScope (attempt $i)..."
-                & $modelscope download --model $modelscopeId --local_dir $localDir 2>$null
-                if ((Test-Path $localDir) -and (Get-ChildItem $localDir -ErrorAction SilentlyContinue)) {
-                    Write-Host "[INFO] Downloaded $modelName from ModelScope"
-                    $downloaded = $true
-                    break
-                }
-            } catch {
-                Write-Host "[WARN] Attempt $i failed: $_"
-                if ($i -lt 5) {
-                    Write-Host "Retrying in 10 seconds..."
-                    Start-Sleep -Seconds 10
-                }
-            }
-        }
-    }
-    
-    if (-not $downloaded) {
-        Write-Error "[ERROR] Failed to download $modelName"
-        exit 1
+        Write-Host "[WARN] Could not download $modelName - skipping (will be downloaded on first use)"
     }
 }
 
