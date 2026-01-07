@@ -118,9 +118,13 @@ jobs:
           # Install Git LFS
           git lfs install
           
-          # Clone ModelScope repo
-          $repoUrl = "https://oauth2:$env:MS_TOKEN@www.modelscope.cn/${{ env.MS_REPO }}.git"
-          git clone $repoUrl ms_repo
+          # Configure git
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # Clone ModelScope repo (use token as password)
+          $repoUrl = "https://git:$env:MS_TOKEN@www.modelscope.cn/${{ env.MS_REPO }}.git"
+          git clone --depth 1 $repoUrl ms_repo
           cd ms_repo
           
           # Copy file and track with LFS
