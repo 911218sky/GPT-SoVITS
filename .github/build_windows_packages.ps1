@@ -206,38 +206,15 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-# Make venv portable by copying base Python into venv
-Write-Host "[INFO] Making environment portable..."
+# Save base Python path for later (to make portable after installing packages)
 $pyvenvCfg = "$envPath\pyvenv.cfg"
+$basePythonDir = $null
 if (Test-Path $pyvenvCfg) {
-    # Read home path from pyvenv.cfg
     $homeMatch = Select-String -Path $pyvenvCfg -Pattern "^home\s*=\s*(.+)$"
     if ($homeMatch) {
         $basePythonDir = $homeMatch.Matches[0].Groups[1].Value.Trim()
         Write-Host "[INFO] Base Python at: $basePythonDir"
-        
-        # Copy base Python files to venv (DLLs, Lib/encodings, etc.)
-        if (Test-Path $basePythonDir) {
-            # Copy python DLLs
-            Copy-Item "$basePythonDir\*.dll" "$envPath\Scripts\" -Force -ErrorAction SilentlyContinue
-            
-            # Copy DLLs folder
-            if (Test-Path "$basePythonDir\DLLs") {
-                Copy-Item "$basePythonDir\DLLs" "$envPath\" -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            
-            # Copy Lib folder (standard library)
-            if (Test-Path "$basePythonDir\Lib") {
-                # Merge with existing Lib (site-packages)
-                Get-ChildItem "$basePythonDir\Lib" -Exclude "site-packages" | ForEach-Object {
-                    Copy-Item $_.FullName "$envPath\Lib\" -Recurse -Force -ErrorAction SilentlyContinue
-                }
-            }
-        }
     }
-    
-    # Remove pyvenv.cfg to prevent path lookup
-    Remove-Item $pyvenvCfg -Force
 }
 
 Write-Host "[INFO] Python environment created at: $envPath"
@@ -472,6 +449,36 @@ if ($gitFiles) {
 
 # Clean up FFmpeg zip (downloaded earlier)
 Remove-Item $ffZip -Force -ErrorAction SilentlyContinue
+
+# ============================================
+# Make venv portable (after all packages installed)
+# ============================================
+Write-Host "[INFO] Making environment portable..."
+if ($basePythonDir -and (Test-Path $basePythonDir)) {
+    # Copy python DLLs
+    Copy-Item "$basePythonDir\*.dll" "$envPath\Scripts\" -Force -ErrorAction SilentlyContinue
+    
+    # Copy DLLs folder
+    if (Test-Path "$basePythonDir\DLLs") {
+        Copy-Item "$basePythonDir\DLLs" "$envPath\" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    
+    # Copy Lib folder (standard library, excluding site-packages)
+    if (Test-Path "$basePythonDir\Lib") {
+        Get-ChildItem "$basePythonDir\Lib" -Exclude "site-packages" | ForEach-Object {
+            Copy-Item $_.FullName "$envPath\Lib\" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    
+    Write-Host "[INFO] Copied base Python files for portability"
+}
+
+# Remove pyvenv.cfg to make fully portable
+$pyvenvCfg = "$envPath\pyvenv.cfg"
+if (Test-Path $pyvenvCfg) {
+    Remove-Item $pyvenvCfg -Force
+    Write-Host "[INFO] Removed pyvenv.cfg"
+}
 
 # ============================================
 # PHASE 3: Package
