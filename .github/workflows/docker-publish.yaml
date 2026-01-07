@@ -4,23 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  generate-meta:
-    runs-on: ubuntu-22.04
-    outputs:
-      tag: ${{ steps.meta.outputs.tag }}
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Generate Tag
-        id: meta
-        run: |
-          DATE=$(date +'%Y%m%d')
-          COMMIT=$(git rev-parse --short=6 HEAD)
-          echo "tag=${DATE}-${COMMIT}" >> $GITHUB_OUTPUT
-
   build-amd64:
-    needs: generate-meta
     runs-on: ubuntu-22.04
     strategy:
       matrix:
@@ -86,8 +70,9 @@ jobs:
           platforms: linux/amd64
           build-args: |
             CUDA_VERSION=${{ matrix.cuda_version }}
+          outputs: type=image,compression=zstd,compression-level=3,force-compression=true
           tags: |
-            sky1218/gpt-sovits:${{ matrix.tag_prefix }}-${{ needs.generate-meta.outputs.tag }}
+            sky1218/gpt-sovits:${{ matrix.tag_prefix }}
             sky1218/gpt-sovits:latest-${{ matrix.tag_prefix }}
 
   create-default:
@@ -108,4 +93,4 @@ jobs:
         run: |
           docker buildx imagetools create \
             --tag sky1218/gpt-sovits:latest \
-            sky1218/gpt-sovits:latest-cu126
+            sky1218/gpt-sovits:cu126

@@ -356,14 +356,33 @@ if (Test-Path $junctionName) {
 }
 cmd /c mklink /J "$junctionName" "$junctionTarget"
 
-$7zPath = "$pkgName.7z"
+$tarZstPath = "$pkgName.tar.zst"
 
-Write-Host "[INFO] Compressing to $7zPath..."
+Write-Host "[INFO] Compressing to $tarZstPath..."
 $start = Get-Date
 
-# Compress the JUNCTION with maximum compression settings
-# mx=9: Ultra compression, md=256m: 256MB dictionary for better compression ratio
-& "C:\Program Files\7-Zip\7z.exe" a -t7z "$7zPath" "$junctionName" -m0=lzma2 -mx=9 -md=256m -mfb=273 -ms=on -mmt=on -bsp1
+# Download and setup zstd
+$zstdDir = "zstd_tool"
+$zstdPath = "$zstdDir\zstd.exe"
+New-Item -ItemType Directory -Force -Path $zstdDir | Out-Null
+
+if (-not (Test-Path $zstdPath)) {
+    Write-Host "[INFO] Downloading zstd..."
+    $zstdUrl = "https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-v1.5.6-win64.zip"
+    $zstdZip = "$zstdDir\zstd.zip"
+    Invoke-WebRequest -Uri $zstdUrl -OutFile $zstdZip
+    Expand-Archive -Path $zstdZip -DestinationPath $zstdDir -Force
+    Copy-Item "$zstdDir\zstd-v1.5.6-win64\zstd.exe" $zstdPath -Force
+    Remove-Item $zstdZip -Force
+    Remove-Item "$zstdDir\zstd-v1.5.6-win64" -Recurse -Force
+    Write-Host "[INFO] zstd downloaded and ready"
+}
+
+# Create tar archive and compress with zstd
+# -3: compression level 3 (good balance of speed and ratio)
+# -T0: use all CPU cores for parallel compression
+Write-Host "[INFO] Creating tar.zst archive..."
+& tar -cf - "$junctionName" | & $zstdPath -3 -T0 -o "$tarZstPath"
 
 $end = Get-Date
 Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).TotalMinutes, 2)) minutes"
@@ -372,11 +391,14 @@ Write-Host "[INFO] Compression completed in $([math]::Round(($end - $start).Tota
 Write-Host "[INFO] Removing Junction..."
 cmd /c rmdir "$junctionName"
 
+# Cleanup zstd tool
+Remove-Item "zstd_tool" -Recurse -Force -ErrorAction SilentlyContinue
+
 # Show file info
-$pkgFile = Get-Item "$7zPath"
+$pkgFile = Get-Item "$tarZstPath"
 Write-Host "[INFO] Created package: $($pkgFile.Name) ($([math]::Round($pkgFile.Length / 1GB, 2)) GB)"
 
 Write-Host ""
 Write-Host "=========================================="
-Write-Host "  SUCCESS: $7zPath created!"
+Write-Host "  SUCCESS: $tarZstPath created!"
 Write-Host "=========================================="
