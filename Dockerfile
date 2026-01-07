@@ -33,7 +33,7 @@ ENV PATH="/root/uv/env/bin:/root/uv/bin:/root/uv:$PATH"
 ENV UV_PYTHON="/root/uv/env/bin/python"
 ENV VIRTUAL_ENV="/root/uv/env"
 
-COPY extra-req.txt requirements.txt /workspace/GPT-SoVITS/
+COPY extra-req.txt requirements.txt install.sh /workspace/GPT-SoVITS/
 RUN bash Docker/install_wrapper.sh
 
 RUN uv cache clean && \

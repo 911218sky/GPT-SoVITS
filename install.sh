@@ -31,17 +31,8 @@ on_error() {
     exit "$code"
 }
 
-run_conda_quiet() {
+run_uv_quiet() {
     local output
-    output=$(conda install --yes --quiet -c conda-forge "$@" 2>&1) || {
-        echo -e "${ERROR} Conda install failed:\n$output"
-        exit 1
-    }
-}
-
-run_pip_quiet() {
-    local output
-    # 使用 uv pip 加速安裝
     output=$(uv pip install "$@" 2>&1) || {
         echo -e "${ERROR} uv pip install failed:\n$output"
         exit 1
@@ -65,8 +56,10 @@ run_wget_quiet() {
     fi
 }
 
-if ! command -v conda &>/dev/null; then
-    echo -e "${ERROR}Conda Not Found"
+# Check for uv
+if ! command -v uv &>/dev/null; then
+    echo -e "${ERROR}uv Not Found. Please install uv first:"
+    echo -e "${INFO}  curl -LsSf https://astral.sh/uv/install.sh | sh"
     exit 1
 fi
 
@@ -179,40 +172,29 @@ if ! $USE_HF && ! $USE_HF_MIRROR && ! $USE_MODELSCOPE; then
     exit 1
 fi
 
-case "$(uname -m)" in
-x86_64 | amd64) SYSROOT_PKG="sysroot_linux-64>=2.28" ;;
-aarch64 | arm64) SYSROOT_PKG="sysroot_linux-aarch64>=2.28" ;;
-ppc64le) SYSROOT_PKG="sysroot_linux-ppc64le>=2.28" ;;
-*)
-    echo "Unsupported architecture: $(uname -m)"
-    exit 1
-    ;;
-esac
-
-# Install build tools
+# Check system requirements
 echo -e "${INFO}Detected system: $(uname -s) $(uname -r) $(uname -m)"
+
+# Check for required system tools
 if [ "$(uname)" != "Darwin" ]; then
+    # Linux: check for gcc
     gcc_major_version=$(command -v gcc >/dev/null 2>&1 && gcc -dumpversion | cut -d. -f1 || echo 0)
     if [ "$gcc_major_version" -lt 11 ]; then
-        echo -e "${INFO}Installing GCC & G++..."
-        run_conda_quiet gcc=11 gxx=11
-        run_conda_quiet "$SYSROOT_PKG"
-        echo -e "${SUCCESS}GCC & G++ Installed..."
+        echo -e "${WARNING}GCC version < 11 detected. Some packages may fail to compile."
+        echo -e "${WARNING}Please install GCC 11+ using your system package manager:"
+        echo -e "${INFO}  Ubuntu/Debian: sudo apt install gcc-11 g++-11"
+        echo -e "${INFO}  Fedora: sudo dnf install gcc gcc-c++"
     else
         echo -e "${INFO}Detected GCC Version: $gcc_major_version"
-        echo -e "${INFO}Skip Installing GCC & G++ From Conda-Forge"
-        echo -e "${INFO}Installing libstdcxx-ng From Conda-Forge"
-        run_conda_quiet "libstdcxx-ng>=$gcc_major_version"
-        echo -e "${SUCCESS}libstdcxx-ng=$gcc_major_version Installed..."
     fi
 else
+    # macOS: check for Xcode
     if ! xcode-select -p &>/dev/null; then
         echo -e "${INFO}Installing Xcode Command Line Tools..."
         xcode-select --install
         echo -e "${INFO}Waiting For Xcode Command Line Tools Installation Complete..."
         while true; do
             sleep 20
-
             if xcode-select -p &>/dev/null; then
                 echo -e "${SUCCESS}Xcode Command Line Tools Installed"
                 break
@@ -229,23 +211,20 @@ else
     fi
 fi
 
-echo -e "${INFO}Installing FFmpeg, CMake & unzip..."
-run_conda_quiet ffmpeg cmake make unzip
-echo -e "${SUCCESS}FFmpeg, CMake & unzip Installed"
+# Check for ffmpeg
+if ! command -v ffmpeg &>/dev/null; then
+    echo -e "${WARNING}FFmpeg not found. Please install it:"
+    echo -e "${INFO}  Ubuntu/Debian: sudo apt install ffmpeg"
+    echo -e "${INFO}  macOS: brew install ffmpeg"
+    echo -e "${INFO}  Fedora: sudo dnf install ffmpeg"
+fi
 
-# Install uv for faster pip operations
-echo -e "${INFO}Installing uv..."
-python -m pip install uv -q
-echo -e "${SUCCESS}uv Installed"
-
-# Refresh command hash table to pick up newly installed commands
-hash -r
-
-# Verify unzip is available
+# Check for unzip
 if ! command -v unzip &>/dev/null; then
-    echo -e "${WARNING}unzip not found in PATH, using conda prefix"
-    export PATH="$CONDA_PREFIX/bin:$PATH"
-    hash -r
+    echo -e "${ERROR}unzip not found. Please install it:"
+    echo -e "${INFO}  Ubuntu/Debian: sudo apt install unzip"
+    echo -e "${INFO}  macOS: brew install unzip"
+    exit 1
 fi
 
 if [ "$USE_HF" = "true" ]; then
@@ -324,29 +303,27 @@ TORCHAUDIO_VERSION="2.7.1"
 if [ "$USE_CUDA" = true ]; then
     if [ "$CUDA" = 128 ]; then
         echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CUDA 12.8..."
-        run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu128"
+        run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu128"
     elif [ "$CUDA" = 126 ]; then
         echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CUDA 12.6..."
-        run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu126"
+        run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu126"
     fi
 elif [ "$USE_ROCM" = true ]; then
     echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For ROCm 6.2..."
-    run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/rocm6.2"
+    run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/rocm6.2"
 elif [ "$USE_CPU" = true ]; then
     echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CPU..."
-    run_pip_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cpu"
+    run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cpu"
 fi
 echo -e "${SUCCESS}PyTorch Installed"
 
 echo -e "${INFO}Installing Python Dependencies From requirements.txt..."
 
-hash -r
-
 # Install main requirements first (includes onnxruntime-gpu needed by faster-whisper)
-run_pip_quiet -r requirements.txt
+run_uv_quiet -r requirements.txt
 
 # Install extra requirements (faster-whisper) - it will use already installed onnxruntime-gpu
-run_pip_quiet -r extra-req.txt
+run_uv_quiet -r extra-req.txt
 
 echo -e "${SUCCESS}Python Dependencies Installed"
 
@@ -369,7 +346,7 @@ echo -e "${SUCCESS}Open JTalk Dic Downloaded"
 
 if [ "$USE_ROCM" = true ] && [ "$IS_WSL" = true ]; then
     echo -e "${INFO}Updating WSL Compatible Runtime Lib For ROCm..."
-    location=$(pip show torch | grep Location | awk -F ": " '{print $2}')
+    location=$(uv pip show torch | grep Location | awk -F ": " '{print $2}')
     cd "${location}"/torch/lib/ || exit
     rm libhsa-runtime64.so*
     cp "$(readlink -f /opt/rocm/lib/libhsa-runtime64.so)" libhsa-runtime64.so

@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# GPT-SoVITS Docker 安裝腳本 (使用 uv)
-# 安裝 PyTorch、依賴、預訓練模型
+# GPT-SoVITS Docker 安裝腳本
+# 呼叫 install.sh 並下載 Docker 專用的額外模型
 #
 
 set -e
@@ -12,34 +12,15 @@ cd "$SCRIPT_DIR/.." || exit 1
 # 啟動 uv 環境
 source "$HOME/uv/etc/profile.d/uv.sh"
 
-UV="$HOME/uv/uv"
+# 呼叫主安裝腳本（PyTorch、依賴、預訓練模型都在這裡處理）
+echo "[INFO] Running main install script..."
+bash install.sh --device "CU${CUDA_VERSION//./}" --source HF --download-uvr5
 
-# === 安裝 PyTorch ===
-echo "[INFO] Installing PyTorch for CUDA ${CUDA_VERSION}..."
-case "${CUDA_VERSION}" in
-    "12.6")
-        $UV pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
-        ;;
-    "12.8")
-        $UV pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
-        ;;
-    *)
-        echo "[ERROR] Unsupported CUDA version: ${CUDA_VERSION}"
-        exit 1
-        ;;
-esac
+# === Docker 專用：下載額外模型 ===
 
-# === 安裝依賴 ===
-echo "[INFO] Installing dependencies..."
-# 移除 --no-binary 限制
-grep -v "^--no-binary" requirements.txt > requirements_optimized.txt || cp requirements.txt requirements_optimized.txt
-$UV pip install -r requirements_optimized.txt
-$UV pip install -r extra-req.txt
-rm -f requirements_optimized.txt
-
-# === 下載預訓練模型 ===
+# 安裝模型下載工具
 echo "[INFO] Installing model download tools..."
-$UV pip install huggingface_hub modelscope -q
+uv pip install huggingface_hub modelscope -q
 
 # 下載 FunASR 模型
 echo "[INFO] Downloading FunASR models..."
@@ -53,7 +34,7 @@ curl -L -o GPT_SoVITS/pretrained_models/fast_langdetect/lid.176.bin \
 
 # === 清理快取（Docker image 優化）===
 echo "[INFO] Cleaning up caches..."
-$UV cache clean
+uv cache clean
 rm -rf /tmp/* /var/tmp/* 2>/dev/null || true
 rm -rf "$HOME/.cache"
 
