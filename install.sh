@@ -301,6 +301,7 @@ if [ "$DOWNLOAD_UVR5" = "true" ]; then
         rm -rf uvr5_weights.zip
         run_wget_quiet "$UVR5_URL"
 
+        mkdir -p tools/uvr5
         unzip -q -o uvr5_weights.zip -d tools/uvr5
         rm -rf uvr5_weights.zip
         echo -e "${SUCCESS}UVR5 Models Downloaded"
