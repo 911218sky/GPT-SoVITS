@@ -189,22 +189,16 @@ Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 # Setup micromamba environment
 $env:MAMBA_ROOT_PREFIX = $condaPath
 
-# Clear any existing root prefix config to avoid "Overwriting root prefix is not permitted" error
+# Clear any existing config to avoid conflicts
 $mambaRcPath = "$env:USERPROFILE\.mambarc"
-if (Test-Path $mambaRcPath) {
-    Remove-Item $mambaRcPath -Force
-}
+if (Test-Path $mambaRcPath) { Remove-Item $mambaRcPath -Force }
 $condarc = "$env:USERPROFILE\.condarc"
-if (Test-Path $condarc) {
-    Remove-Item $condarc -Force
-}
+if (Test-Path $condarc) { Remove-Item $condarc -Force }
 
-# Initialize micromamba with explicit root prefix
-& $mambaExe shell init -s powershell -p $condaPath | Out-Null
-
-& $mambaExe create -n base -y -q -r $condaPath
-& $mambaExe install -n base python=3.11 -c conda-forge -y -q -r $condaPath
-& $mambaExe clean -afy -r $condaPath | Out-Null
+# Create environment and install Python (MAMBA_ROOT_PREFIX env var is used automatically)
+& $mambaExe create -n base -y -q
+& $mambaExe install -n base python=3.11 -c conda-forge -y -q
+& $mambaExe clean -afy | Out-Null
 
 $pip = "$condaPath\envs\base\Scripts\pip.exe"
 $python = "$condaPath\envs\base\python.exe"
@@ -212,6 +206,8 @@ $python = "$condaPath\envs\base\python.exe"
 # Verify pip exists
 if (-not (Test-Path $pip)) {
     Write-Error "pip not found at $pip"
+    Write-Host "[DEBUG] Listing $condaPath contents:"
+    Get-ChildItem $condaPath -Recurse -Depth 2 | Select-Object FullName
     exit 1
 }
 

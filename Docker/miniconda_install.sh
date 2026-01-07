@@ -24,7 +24,7 @@ export MAMBA_ROOT_PREFIX="$MAMBA_ROOT"
 MAMBA="$MAMBA_ROOT/bin/micromamba"
 
 # 初始化 shell
-$MAMBA shell init -s bash -p "$MAMBA_ROOT" > /dev/null
+$MAMBA shell init -s bash --root-prefix "$MAMBA_ROOT" > /dev/null
 
 # 安裝 Python
 echo "[INFO] Installing Python 3.11..."
