@@ -177,7 +177,6 @@ $runtimePath = "$srcDir\runtime"
 $envPath = "$runtimePath\env"
 
 New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
-New-Item -ItemType Directory -Force -Path $envPath | Out-Null
 
 # Download and install uv
 Write-Host "[INFO] Downloading uv..."
@@ -195,26 +194,17 @@ if (-not (Test-Path $uv)) {
     exit 1
 }
 
-# Download portable Python (python-build-standalone)
-Write-Host "[INFO] Downloading portable Python 3.11..."
-$pythonVersion = "3.11.12"
-$pythonRelease = "20251217"
-$pythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/$pythonRelease/cpython-$pythonVersion+$pythonRelease-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
-$pythonArchive = "$tmpDir\python.tar.gz"
+# Download portable Python using uv
+Write-Host "[INFO] Downloading portable Python 3.11 via uv..."
+$env:UV_PYTHON_INSTALL_DIR = $envPath
+& $uv python install 3.11 --preview
 
-Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonArchive
-
-Write-Host "[INFO] Extracting portable Python..."
-# Extract tar.gz
-& tar -xzf $pythonArchive -C $tmpDir
-
-# Move python folder contents to env
-$pythonExtracted = "$tmpDir\python"
-if (Test-Path $pythonExtracted) {
-    Get-ChildItem $pythonExtracted | Move-Item -Destination $envPath -Force
+# Find and move Python to env root for simpler path
+$pythonDir = Get-ChildItem $envPath -Directory -Filter "cpython-3.11*" | Select-Object -First 1
+if ($pythonDir) {
+    Get-ChildItem $pythonDir.FullName | Move-Item -Destination $envPath -Force
+    Remove-Item $pythonDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
 }
-Remove-Item $pythonArchive -Force -ErrorAction SilentlyContinue
-Remove-Item $pythonExtracted -Recurse -Force -ErrorAction SilentlyContinue
 
 $python = "$envPath\python.exe"
 
