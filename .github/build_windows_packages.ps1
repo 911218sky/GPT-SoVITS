@@ -197,8 +197,8 @@ if (-not (Test-Path $uv)) {
 
 # Download standalone Python
 Write-Host "[INFO] Downloading standalone Python 3.11..."
-$pythonVersion = "3.11.12"
-$pythonRelease = "20251217"
+$pythonVersion = "3.11.14"
+$pythonRelease = "20250702"
 $pythonUrl = "https://github.com/astral-sh/python-build-standalone/releases/download/$pythonRelease/cpython-$pythonVersion+$pythonRelease-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
 $pythonArchive = "$tmpDir\python.tar.gz"
 
