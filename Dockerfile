@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     doxygen \
     build-essential \
+    ffmpeg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -26,22 +27,21 @@ SHELL ["/bin/bash", "-c"]
 WORKDIR /workspace/GPT-SoVITS
 
 COPY Docker /workspace/GPT-SoVITS/Docker/
-ENV CONDA_PLUGINS_AUTO_ACCEPT_TOS=true
-RUN bash Docker/miniconda_install.sh
+RUN bash Docker/uv_install.sh
 
-ENV PATH="/root/miniconda3/bin:$PATH"
+ENV PATH="/root/uv/env/bin:/root/uv/bin:/root/uv:$PATH"
+ENV UV_PYTHON="/root/uv/env/bin/python"
+ENV VIRTUAL_ENV="/root/uv/env"
 
-COPY extra-req.txt requirements.txt install.sh /workspace/GPT-SoVITS/
+COPY extra-req.txt requirements.txt /workspace/GPT-SoVITS/
 RUN bash Docker/install_wrapper.sh
 
-RUN /root/miniconda3/bin/micromamba clean -afy && \
-    pip cache purge && \
-    rm -rf /root/.cache/pip /root/.cache/huggingface && \
-    find /root/miniconda3 -name "*.pyc" -delete && \
-    find /root/miniconda3 -name "*.pyo" -delete && \
-    find /root/miniconda3 -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
-    find /root/miniconda3 -name "*.a" -delete 2>/dev/null || true && \
-    rm -rf /root/miniconda3/pkgs/*
+RUN uv cache clean && \
+    rm -rf /root/.cache/pip /root/.cache/huggingface /root/.cache/uv && \
+    find /root/uv/env -name "*.pyc" -delete && \
+    find /root/uv/env -name "*.pyo" -delete && \
+    find /root/uv/env -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    find /root/uv/env -name "*.a" -delete 2>/dev/null || true
 
 # Final Stage
 FROM nvidia/cuda:${CUDA_VERSION}.0-runtime-ubuntu24.04
@@ -52,16 +52,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
+    ffmpeg \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-COPY --from=builder /root/miniconda3 /root/miniconda3
+COPY --from=builder /root/uv /root/uv
 
-ENV PATH="/root/miniconda3/bin:$PATH"
+ENV PATH="/root/uv/env/bin:/root/uv/bin:/root/uv:$PATH"
+ENV UV_PYTHON="/root/uv/env/bin/python"
+ENV VIRTUAL_ENV="/root/uv/env"
 ENV PYTHONPATH="/workspace/GPT-SoVITS"
 
-# Setup shell environment (micromamba doesn't need init, just source the profile)
-RUN echo 'source /root/miniconda3/etc/profile.d/conda.sh' >> ~/.bashrc
+# Setup shell environment
+RUN echo 'source /root/uv/etc/profile.d/uv.sh' >> ~/.bashrc
 
 WORKDIR /workspace/GPT-SoVITS
 
