@@ -186,33 +186,7 @@ Remove-Item "$tmpDir\micromamba.tar.bz2" -Force
 Remove-Item "$tmpDir\Library" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 
-# Setup micromamba environment - clear ALL possible config locations
-# GitHub Actions Windows runner has Miniconda preinstalled, which can interfere
-
-# Clear all possible micromamba config files
-$configPaths = @(
-    "$env:USERPROFILE\.mambarc",
-    "$env:USERPROFILE\.condarc",
-    "$env:USERPROFILE\.mamba",
-    "$env:USERPROFILE\micromamba",
-    "$env:LOCALAPPDATA\mamba",
-    "$env:LOCALAPPDATA\micromamba",
-    "$env:APPDATA\mamba",
-    "$env:APPDATA\micromamba"
-)
-foreach ($path in $configPaths) {
-    if (Test-Path $path) {
-        Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "[DEBUG] Removed: $path"
-    }
-}
-
-# Clear environment variables that might interfere
-$env:MAMBA_ROOT_PREFIX = $null
-$env:CONDA_PREFIX = $null
-$env:CONDA_DEFAULT_ENV = $null
-$env:CONDA_EXE = $null
-
+# Setup micromamba environment
 # Use --prefix to create environment at specific path (avoids root prefix issues)
 $envPath = "$runtimePath\env"
 Write-Host "[DEBUG] Creating environment at: $envPath"
