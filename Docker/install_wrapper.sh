@@ -15,7 +15,7 @@ conda activate base
 
 # 呼叫主安裝腳本（PyTorch、依賴、預訓練模型都在這裡處理）
 echo "[INFO] Running main install script..."
-bash install.sh --device "CU${CUDA_VERSION//./}" --source HF
+bash install.sh --device "CU${CUDA_VERSION//./}" --source HF --download-uvr5
 
 # === Docker 專用：下載額外模型 ===
 

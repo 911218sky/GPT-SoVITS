@@ -16,15 +16,14 @@ function Write-ErrorLog {
     )
 
     Write-Host "`n[ERROR] Command failed:" -ForegroundColor Red
-    if (-not $ErrorRecord.Exception.Message){
-    } else {
+    if ($ErrorRecord.Exception.Message) {
         Write-Host "Message:" -ForegroundColor Red 
         $ErrorRecord.Exception.Message -split "`n" | ForEach-Object {
             Write-Host "    $_"
         }
     }
 
-    Write-Host "Command:" -ForegroundColor Red  -NoNewline
+    Write-Host "Command:" -ForegroundColor Red -NoNewline
     Write-Host " $($ErrorRecord.InvocationInfo.Line)".Replace("`r", "").Replace("`n", "")
     Write-Host "Location:" -ForegroundColor Red -NoNewline
     Write-Host " $($ErrorRecord.InvocationInfo.ScriptName):$($ErrorRecord.InvocationInfo.ScriptLineNumber)"
@@ -40,11 +39,11 @@ function Write-Info($msg) {
     Write-Host "[INFO]:" -ForegroundColor Green -NoNewline
     Write-Host " $msg"
 }
+
 function Write-Success($msg) {
     Write-Host "[SUCCESS]:" -ForegroundColor Blue -NoNewline
     Write-Host " $msg"
 }
-
 
 function Invoke-Conda {
     param (
@@ -63,8 +62,7 @@ function Invoke-Conda {
                 $msg = $item.Exception.Message
                 Write-Host "$msg" -ForegroundColor Red
                 $errorMessages += $msg
-            }
-            else {
+            } else {
                 Write-Host $item
                 $errorMessages += $item
             }
@@ -79,7 +77,7 @@ function Invoke-Pip {
         [string[]]$Args
     )
     
-    $output = & pip install @Args 2>&1
+    $output = & python -m pip install @Args 2>&1
     $exitCode = $LASTEXITCODE
     
     if ($exitCode -ne 0) {
@@ -90,8 +88,7 @@ function Invoke-Pip {
                 $msg = $item.Exception.Message
                 Write-Host "$msg" -ForegroundColor Red
                 $errorMessages += $msg
-            }
-            else {
+            } else {
                 Write-Host $item
                 $errorMessages += $item
             }
@@ -136,15 +133,20 @@ function Invoke-Unzip {
 chcp 65001
 Set-Location $PSScriptRoot
 
+if (-not (Get-Command conda -ErrorAction SilentlyContinue)) {
+    Write-Host "[ERROR]: Conda Not Found" -ForegroundColor Red
+    exit 1
+}
+
 Write-Info "Installing FFmpeg & CMake..."
-Invoke-Conda  ffmpeg cmake
+Invoke-Conda ffmpeg cmake
 Write-Success "FFmpeg & CMake Installed"
 
-$PretrainedURL  = ""
-$G2PWURL        = ""
-$UVR5URL        = ""
-$NLTKURL        = ""
-$OpenJTalkURL   = ""
+$PretrainedURL = ""
+$G2PWURL       = ""
+$UVR5URL       = ""
+$NLTKURL       = ""
+$OpenJTalkURL  = ""
 
 switch ($Source) {
     "HF" {
@@ -183,7 +185,6 @@ if (-not (Test-Path "GPT_SoVITS/pretrained_models/sv")) {
     Write-Info "Skip Downloading Pretrained Models"
 }
 
-
 if (-not (Test-Path "GPT_SoVITS/text/G2PWModel")) {
     Write-Info "Downloading G2PWModel..."
     Invoke-Download -Uri $G2PWURL -OutFile "G2PWModel.zip"
@@ -206,36 +207,42 @@ if ($DownloadUVR5) {
     }
 }
 
+$TORCH_VERSION = "2.7.1"
+$TORCHVISION_VERSION = "0.22.1"
+$TORCHAUDIO_VERSION = "2.7.1"
+
 switch ($Device) {
     "CU128" {
-        Write-Info "Installing PyTorch For CUDA 12.8..."
-        Invoke-Pip torch torchaudio --index-url "https://download.pytorch.org/whl/cu128"
+        Write-Info "Installing PyTorch $TORCH_VERSION For CUDA 12.8..."
+        Invoke-Pip "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" "torchaudio==$TORCHAUDIO_VERSION" torchcodec --index-url "https://download.pytorch.org/whl/cu128"
     }
     "CU126" {
-        Write-Info "Installing PyTorch For CUDA 12.6..."
-        Invoke-Pip torch torchaudio --index-url "https://download.pytorch.org/whl/cu126"
+        Write-Info "Installing PyTorch $TORCH_VERSION For CUDA 12.6..."
+        Invoke-Pip "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" "torchaudio==$TORCHAUDIO_VERSION" torchcodec --index-url "https://download.pytorch.org/whl/cu126"
     }
     "CPU" {
-        Write-Info "Installing PyTorch For CPU..."
-        Invoke-Pip torch torchaudio --index-url "https://download.pytorch.org/whl/cpu"
+        Write-Info "Installing PyTorch $TORCH_VERSION For CPU..."
+        Invoke-Pip "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" "torchaudio==$TORCHAUDIO_VERSION" torchcodec --index-url "https://download.pytorch.org/whl/cpu"
     }
 }
 Write-Success "PyTorch Installed"
 
 Write-Info "Installing Python Dependencies From requirements.txt..."
-Invoke-Pip -r extra-req.txt --no-deps
 Invoke-Pip -r requirements.txt
+Invoke-Pip -r extra-req.txt
 Write-Success "Python Dependencies Installed"
 
 Write-Info "Downloading NLTK Data..."
 Invoke-Download -Uri $NLTKURL -OutFile "nltk_data.zip"
-Invoke-Unzip "nltk_data.zip" (python -c "import sys; print(sys.prefix)").Trim()
+$pyPrefix = (python -c "import sys; print(sys.prefix)").Trim()
+Invoke-Unzip "nltk_data.zip" $pyPrefix
+Write-Success "NLTK Data Downloaded"
 
 Write-Info "Downloading Open JTalk Dict..."
 Invoke-Download -Uri $OpenJTalkURL -OutFile "open_jtalk_dic_utf_8-1.11.tar.gz"
 $target = (python -c "import os, pyopenjtalk; print(os.path.dirname(pyopenjtalk.__file__))").Trim()
 tar -xzf open_jtalk_dic_utf_8-1.11.tar.gz -C $target
 Remove-Item "open_jtalk_dic_utf_8-1.11.tar.gz" -Force
-Write-Success "Open JTalk Dic Downloaded"
+Write-Success "Open JTalk Dict Downloaded"
 
 Write-Success "Installation Completed"
