@@ -250,14 +250,6 @@ foreach ($dir in $distInfoDirs) {
 # Remove Triton (not used on Windows)
 Remove-Item "$sitePackages\triton*" -Recurse -Force -ErrorAction SilentlyContinue
 
-# Remove unnecessary CUDA files from PyTorch
-$torchLib = "$sitePackages\torch\lib"
-if (Test-Path $torchLib) {
-    Get-ChildItem $torchLib -Filter "*.dll" -ErrorAction SilentlyContinue | Where-Object { 
-        $_.Name -match "nvrtc-builtins"
-    } | Remove-Item -Force -ErrorAction SilentlyContinue
-}
-
 # Extract FFmpeg
 Write-Host "[INFO] Extracting FFmpeg..."
 Expand-Archive $ffZip -DestinationPath $tmpDir -Force
