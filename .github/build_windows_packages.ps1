@@ -188,12 +188,32 @@ Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 
 # Setup micromamba environment
 $env:MAMBA_ROOT_PREFIX = $condaPath
-& $mambaExe create -n base -y -q
-& $mambaExe install -n base python=3.11 -c conda-forge -y -q
-& $mambaExe clean -afy | Out-Null
+
+# Clear any existing root prefix config to avoid "Overwriting root prefix is not permitted" error
+$mambaRcPath = "$env:USERPROFILE\.mambarc"
+if (Test-Path $mambaRcPath) {
+    Remove-Item $mambaRcPath -Force
+}
+$condarc = "$env:USERPROFILE\.condarc"
+if (Test-Path $condarc) {
+    Remove-Item $condarc -Force
+}
+
+# Initialize micromamba with explicit root prefix
+& $mambaExe shell init -s powershell -p $condaPath | Out-Null
+
+& $mambaExe create -n base -y -q -r $condaPath
+& $mambaExe install -n base python=3.11 -c conda-forge -y -q -r $condaPath
+& $mambaExe clean -afy -r $condaPath | Out-Null
 
 $pip = "$condaPath\envs\base\Scripts\pip.exe"
 $python = "$condaPath\envs\base\python.exe"
+
+# Verify pip exists
+if (-not (Test-Path $pip)) {
+    Write-Error "pip not found at $pip"
+    exit 1
+}
 
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
