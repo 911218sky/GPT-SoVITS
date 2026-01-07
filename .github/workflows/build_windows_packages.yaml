@@ -194,7 +194,7 @@ jobs:
             fi
             
             HF_LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.tar.zst"
-            MS_LINK="https://www.modelscope.cn/models/${{ env.MS_REPO }}/file/view/master/${NAME}.tar.zst"
+            MS_LINK="https://www.modelscope.cn/models/${{ env.MS_REPO }}/resolve/master/${NAME}.tar.zst"
             echo "| ${NAME}.tar.zst | [⬇️ HuggingFace]($HF_LINK) | [⬇️ ModelScope]($MS_LINK) |" >> release_body.md
           done
 
