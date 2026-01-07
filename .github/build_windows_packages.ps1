@@ -171,7 +171,7 @@ Write-Host "`n=========================================="
 Write-Host "  PHASE 2: Setting up Environment"
 Write-Host "=========================================="
 
-# === Install uv and Download Portable Python ===
+# === Install uv and Create Python Environment ===
 Write-Host "`n[6/9] Installing uv and setting up portable Python environment..."
 $runtimePath = "$srcDir\runtime"
 $envPath = "$runtimePath\env"
@@ -194,19 +194,11 @@ if (-not (Test-Path $uv)) {
     exit 1
 }
 
-# Download portable Python using uv
-Write-Host "[INFO] Downloading portable Python 3.11 via uv..."
-$env:UV_PYTHON_INSTALL_DIR = $envPath
-& $uv python install 3.11 --preview
+# Create venv with uv (downloads Python automatically)
+Write-Host "[INFO] Creating Python 3.11 virtual environment..."
+& $uv venv $envPath --python 3.11
 
-# Find and move Python to env root for simpler path
-$pythonDir = Get-ChildItem $envPath -Directory -Filter "cpython-3.11*" | Select-Object -First 1
-if ($pythonDir) {
-    Get-ChildItem $pythonDir.FullName | Move-Item -Destination $envPath -Force
-    Remove-Item $pythonDir.FullName -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-$python = "$envPath\python.exe"
+$python = "$envPath\Scripts\python.exe"
 
 # Verify python exists
 if (-not (Test-Path $python)) {
@@ -214,7 +206,41 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-Write-Host "[INFO] Portable Python installed at: $python"
+# Make venv portable by copying base Python into venv
+Write-Host "[INFO] Making environment portable..."
+$pyvenvCfg = "$envPath\pyvenv.cfg"
+if (Test-Path $pyvenvCfg) {
+    # Read home path from pyvenv.cfg
+    $homeMatch = Select-String -Path $pyvenvCfg -Pattern "^home\s*=\s*(.+)$"
+    if ($homeMatch) {
+        $basePythonDir = $homeMatch.Matches[0].Groups[1].Value.Trim()
+        Write-Host "[INFO] Base Python at: $basePythonDir"
+        
+        # Copy base Python files to venv (DLLs, Lib/encodings, etc.)
+        if (Test-Path $basePythonDir) {
+            # Copy python DLLs
+            Copy-Item "$basePythonDir\*.dll" "$envPath\Scripts\" -Force -ErrorAction SilentlyContinue
+            
+            # Copy DLLs folder
+            if (Test-Path "$basePythonDir\DLLs") {
+                Copy-Item "$basePythonDir\DLLs" "$envPath\" -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Copy Lib folder (standard library)
+            if (Test-Path "$basePythonDir\Lib") {
+                # Merge with existing Lib (site-packages)
+                Get-ChildItem "$basePythonDir\Lib" -Exclude "site-packages" | ForEach-Object {
+                    Copy-Item $_.FullName "$envPath\Lib\" -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+    
+    # Remove pyvenv.cfg to prevent path lookup
+    Remove-Item $pyvenvCfg -Force
+}
+
+Write-Host "[INFO] Python environment created at: $envPath"
 
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
