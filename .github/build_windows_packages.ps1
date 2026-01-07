@@ -242,17 +242,39 @@ Remove-Item "$env:USERPROFILE\.cache" -Recurse -Force -ErrorAction SilentlyConti
 
 # Remove unnecessary files from site-packages
 $sitePackages = "$envPath\Lib\site-packages"
-Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove .pyc and .pyo files
+$pycFiles = Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" -ErrorAction SilentlyContinue
+if ($pycFiles) {
+    $pycFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# Remove __pycache__ directories
+$pycacheDirs = Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+if ($pycacheDirs) {
+    $pycacheDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Remove test directories
+$testDirs = Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" -ErrorAction SilentlyContinue
+if ($testDirs) {
+    $testDirs | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$testDir = Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" -ErrorAction SilentlyContinue
+if ($testDir) {
+    $testDir | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # Clean up dist-info directories (keep only essential files)
 $distInfoDirs = Get-ChildItem $sitePackages -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue
 if ($distInfoDirs) {
     foreach ($dir in $distInfoDirs) {
         if ($dir -and $dir.FullName -and (Test-Path $dir.FullName)) {
-            Get-ChildItem $dir.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+            $filesToRemove = Get-ChildItem $dir.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" -ErrorAction SilentlyContinue
+            if ($filesToRemove) {
+                $filesToRemove | Remove-Item -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 }
@@ -358,9 +380,20 @@ foreach ($model in $funasr_models) {
 Write-Host "[INFO] All FunASR models downloaded successfully!"
 
 # Clean up ModelScope cache files
-Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+$mscFiles = Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue
+if ($mscFiles) {
+    $mscFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+$lockFiles = Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue
+if ($lockFiles) {
+    $lockFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+$gitFiles = Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue
+if ($gitFiles) {
+    $gitFiles | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # Clean up FFmpeg zip (downloaded earlier)
 Remove-Item $ffZip -Force -ErrorAction SilentlyContinue
@@ -388,8 +421,16 @@ $removeItems = @(
 foreach ($item in $removeItems) {
     Remove-Item $item -Recurse -Force -ErrorAction SilentlyContinue
 }
-Get-ChildItem "$srcDir" -Filter "*.sh" | Remove-Item -Force
-Get-ChildItem "$srcDir" -Filter "*.ipynb" | Remove-Item -Force
+
+$shFiles = Get-ChildItem "$srcDir" -Filter "*.sh" -ErrorAction SilentlyContinue
+if ($shFiles) {
+    $shFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+$ipynbFiles = Get-ChildItem "$srcDir" -Filter "*.ipynb" -ErrorAction SilentlyContinue
+if ($ipynbFiles) {
+    $ipynbFiles | Remove-Item -Force -ErrorAction SilentlyContinue
+}
 
 # Create Junction for correct folder name in 7z
 Set-Location ..
