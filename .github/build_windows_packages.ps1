@@ -294,26 +294,64 @@ Write-Host "[INFO] Downloading lid.176.bin (125MB)..."
 Invoke-WebRequest -Uri $lidModelUrl -OutFile $lidModelPath
 Write-Host "[INFO] Downloaded fast-langdetect model"
 
-# Download FunASR models (try HuggingFace cache first, fallback to ModelScope)
+# Download FunASR models using Python
 Write-Host "[INFO] Downloading FunASR models..."
-& $pip install huggingface_hub modelscope -q --no-warn-script-location
+& $pip install huggingface_hub -q --no-warn-script-location
 
 $asrModelsDir = "$srcDir\tools\asr\models"
 New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
 
 $HF_CACHE_REPO = "sky1218/GPT-SoVITS-Models"
-$funasr_models = @(
-    @{ name = "speech_fsmn_vad_zh-cn-16k-common-pytorch"; modelscope_id = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch" },
-    @{ name = "punc_ct-transformer_zh-cn-common-vocab272727-pytorch"; modelscope_id = "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch" },
-    @{ name = "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"; modelscope_id = "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch" }
-)
 
-$huggingface_cli = "$envPath\Scripts\huggingface-cli.exe"
-$modelscope_cli = "$envPath\Scripts\modelscope.exe"
+# Create Python download script
+$downloadScript = @"
+import os
+import sys
+from pathlib import Path
+
+def download_model(model_name, model_id, local_dir):
+    """Download model from HuggingFace using huggingface_hub"""
+    try:
+        from huggingface_hub import snapshot_download
+        
+        print(f"[INFO] Downloading {model_name} from HuggingFace...")
+        snapshot_download(
+            repo_id=model_id,
+            local_dir=local_dir,
+            repo_type="model",
+            allow_patterns=None,
+            ignore_patterns=None,
+            cache_dir=None,
+            force_download=False,
+            resume_download=True,
+            local_dir_use_symlinks=False
+        )
+        print(f"[INFO] Downloaded {model_name}")
+        return True
+    except Exception as e:
+        print(f"[WARN] Failed to download {model_name}: {e}")
+        return False
+
+if __name__ == "__main__":
+    model_name = sys.argv[1]
+    model_id = sys.argv[2]
+    local_dir = sys.argv[3]
+    
+    Path(local_dir).parent.mkdir(parents=True, exist_ok=True)
+    download_model(model_name, model_id, local_dir)
+"@
+
+$downloadScript | Out-File "$tmpDir\download_model.py" -Encoding UTF8
+
+$funasr_models = @(
+    @{ name = "speech_fsmn_vad_zh-cn-16k-common-pytorch"; hf_id = "$HF_CACHE_REPO/speech_fsmn_vad_zh-cn-16k-common-pytorch" },
+    @{ name = "punc_ct-transformer_zh-cn-common-vocab272727-pytorch"; hf_id = "$HF_CACHE_REPO/punc_ct-transformer_zh-cn-common-vocab272727-pytorch" },
+    @{ name = "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"; hf_id = "$HF_CACHE_REPO/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch" }
+)
 
 foreach ($model in $funasr_models) {
     $modelName = $model.name
-    $modelscopeId = $model.modelscope_id
+    $hfId = $model.hf_id
     $localDir = "$asrModelsDir\$modelName"
     
     if ((Test-Path $localDir) -and (Get-ChildItem $localDir -ErrorAction SilentlyContinue)) {
@@ -321,28 +359,8 @@ foreach ($model in $funasr_models) {
         continue
     }
     
-    $downloaded = $false
-    
-    # Try HuggingFace first
-    Write-Host "[INFO] Trying HuggingFace cache for $modelName..."
-    $tmpDir_hf = "${localDir}_tmp"
-    try {
-        & $huggingface_cli download $HF_CACHE_REPO --include "$modelName/*" --local-dir $tmpDir_hf --quiet 2>$null
-        $srcPath = "$tmpDir_hf\$modelName"
-        if ((Test-Path $srcPath) -and (Get-ChildItem $srcPath -ErrorAction SilentlyContinue)) {
-            if (Test-Path $localDir) { Remove-Item $localDir -Recurse -Force -ErrorAction SilentlyContinue }
-            Move-Item $srcPath $localDir -Force
-            Remove-Item $tmpDir_hf -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "[INFO] Downloaded $modelName from HuggingFace cache"
-            $downloaded = $true
-        }
-    } catch {
-        Write-Host "[INFO] HuggingFace cache not available"
-    }
-    
-    if (-not $downloaded) {
-        Write-Host "[WARN] Could not download $modelName - skipping (will be downloaded on first use)"
-    }
+    # Use Python to download
+    & $python "$tmpDir\download_model.py" $modelName $hfId $localDir
 }
 
 Write-Host "[INFO] All FunASR models downloaded successfully!"
