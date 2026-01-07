@@ -195,6 +195,7 @@ Write-Host "[DEBUG] Creating environment at: $envPath"
 
 $pip = "$envPath\Scripts\pip.exe"
 $python = "$envPath\python.exe"
+$uv = "$envPath\Scripts\uv.exe"
 
 # Verify pip exists
 if (-not (Test-Path $pip)) {
@@ -204,14 +205,18 @@ if (-not (Test-Path $pip)) {
     exit 1
 }
 
+# Install uv for faster package installation
+Write-Host "[INFO] Installing uv..."
+& $pip install uv -q --no-warn-script-location
+
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
 switch ($cuda) {
     "cu126" {
-        & $pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+        & $uv pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
     }
     "cu128" {
-        & $pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+        & $uv pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
     }
     default {
         Write-Error "Unsupported CUDA version: $cuda"
@@ -226,15 +231,15 @@ Write-Host "`n[8/9] Installing dependencies..."
 $reqContent = Get-Content "requirements.txt" | Where-Object { $_ -notmatch "^--no-binary" }
 $reqContent | Out-File "requirements_optimized.txt" -Encoding UTF8
 
-# Install with optimizations
-& $pip install -r requirements_optimized.txt --no-warn-script-location -v
-& $pip install -r extra-req.txt --no-warn-script-location -v
+# Install with uv (much faster than pip)
+& $uv pip install -r requirements_optimized.txt
+& $uv pip install -r extra-req.txt
 
 Remove-Item "requirements_optimized.txt" -Force -ErrorAction SilentlyContinue
 
 # Cleanup caches to reduce package size
 Write-Host "[INFO] Cleaning up caches..."
-& $pip cache purge
+& $uv cache clean
 & $mambaExe clean -afy | Out-Null
 Remove-Item "$runtimePath\pkgs" -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path "$runtimePath\pkgs" | Out-Null
@@ -296,7 +301,7 @@ Write-Host "[INFO] Downloaded fast-langdetect model"
 
 # Download FunASR models using Python
 Write-Host "[INFO] Downloading FunASR models..."
-& $pip install "huggingface_hub[hf_xet]" -q --no-warn-script-location
+& $uv pip install "huggingface_hub[hf_xet]" -q
 
 $asrModelsDir = "$srcDir\tools\asr\models"
 New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null

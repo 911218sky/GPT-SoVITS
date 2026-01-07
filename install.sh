@@ -41,9 +41,9 @@ run_conda_quiet() {
 
 run_pip_quiet() {
     local output
-    # 使用 python -m pip 確保用的是當前環境的 pip
-    output=$(python -m pip install "$@" 2>&1) || {
-        echo -e "${ERROR} Pip install failed:\n$output"
+    # 使用 uv pip 加速安裝
+    output=$(uv pip install "$@" 2>&1) || {
+        echo -e "${ERROR} uv pip install failed:\n$output"
         exit 1
     }
 }
@@ -232,6 +232,11 @@ fi
 echo -e "${INFO}Installing FFmpeg, CMake & unzip..."
 run_conda_quiet ffmpeg cmake make unzip
 echo -e "${SUCCESS}FFmpeg, CMake & unzip Installed"
+
+# Install uv for faster pip operations
+echo -e "${INFO}Installing uv..."
+python -m pip install uv -q
+echo -e "${SUCCESS}uv Installed"
 
 # Refresh command hash table to pick up newly installed commands
 hash -r
