@@ -186,22 +186,41 @@ Remove-Item "$tmpDir\micromamba.tar.bz2" -Force
 Remove-Item "$tmpDir\Library" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 
-# Setup micromamba environment
-$env:MAMBA_ROOT_PREFIX = $condaPath
+# Setup micromamba environment - clear ALL possible config locations
+# GitHub Actions Windows runner has Miniconda preinstalled, which can interfere
 
-# Clear any existing config to avoid conflicts
-$mambaRcPath = "$env:USERPROFILE\.mambarc"
-if (Test-Path $mambaRcPath) { Remove-Item $mambaRcPath -Force }
-$condarc = "$env:USERPROFILE\.condarc"
-if (Test-Path $condarc) { Remove-Item $condarc -Force }
+# Clear all possible micromamba/conda config files
+$configPaths = @(
+    "$env:USERPROFILE\.mambarc",
+    "$env:USERPROFILE\.condarc",
+    "$env:USERPROFILE\.mamba",
+    "$env:USERPROFILE\micromamba",
+    "$env:LOCALAPPDATA\mamba",
+    "$env:LOCALAPPDATA\micromamba",
+    "$env:APPDATA\mamba",
+    "$env:APPDATA\micromamba"
+)
+foreach ($path in $configPaths) {
+    if (Test-Path $path) {
+        Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "[DEBUG] Removed: $path"
+    }
+}
 
-# Create environment and install Python (MAMBA_ROOT_PREFIX env var is used automatically)
-& $mambaExe create -n base -y -q
-& $mambaExe install -n base python=3.11 -c conda-forge -y -q
-& $mambaExe clean -afy | Out-Null
+# Clear environment variables that might interfere
+$env:MAMBA_ROOT_PREFIX = $null
+$env:CONDA_PREFIX = $null
+$env:CONDA_DEFAULT_ENV = $null
+$env:CONDA_EXE = $null
 
-$pip = "$condaPath\envs\base\Scripts\pip.exe"
-$python = "$condaPath\envs\base\python.exe"
+# Use --prefix to create environment at specific path (avoids root prefix issues)
+$envPath = "$condaPath\env"
+Write-Host "[DEBUG] Creating environment at: $envPath"
+& $mambaExe create --prefix $envPath python=3.11 -c conda-forge -y -q
+& $mambaExe clean -afy 2>$null | Out-Null
+
+$pip = "$envPath\Scripts\pip.exe"
+$python = "$envPath\python.exe"
 
 # Verify pip exists
 if (-not (Test-Path $pip)) {
@@ -240,7 +259,7 @@ New-Item -ItemType Directory -Force -Path "$condaPath\pkgs" | Out-Null
 Remove-Item "$env:USERPROFILE\.cache" -Recurse -Force -ErrorAction SilentlyContinue
 
 # Remove unnecessary files from site-packages
-$sitePackages = "$condaPath\envs\base\Lib\site-packages"
+$sitePackages = "$envPath\Lib\site-packages"
 Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" | Remove-Item -Force -ErrorAction SilentlyContinue
 Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
@@ -285,8 +304,8 @@ Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyCon
 Write-Host "[INFO] Extracting FFmpeg..."
 Expand-Archive $ffZip -DestinationPath $tmpDir -Force
 $ffDir = Get-ChildItem -Directory "$tmpDir" | Where-Object { $_.Name -like "ffmpeg*" } | Select-Object -First 1
-Copy-Item "$($ffDir.FullName)\bin\ffmpeg.exe" "$condaPath\envs\base" -Force
-Copy-Item "$($ffDir.FullName)\bin\ffprobe.exe" "$condaPath\envs\base" -Force
+Copy-Item "$($ffDir.FullName)\bin\ffmpeg.exe" "$envPath" -Force
+Copy-Item "$($ffDir.FullName)\bin\ffprobe.exe" "$envPath" -Force
 Remove-Item $ffZip
 Remove-Item $ffDir.FullName -Recurse -Force
 
@@ -309,82 +328,75 @@ Write-Host "[INFO] Downloading FunASR models..."
 & $pip install huggingface_hub modelscope -q --no-warn-script-location
 
 $asrModelsDir = "$srcDir\tools\asr\models"
-$modelscriptContent = @"
-import os
-import sys
-import shutil
+New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
 
-models_dir = r'$asrModelsDir'
-os.makedirs(models_dir, exist_ok=True)
+$HF_CACHE_REPO = "sky1218/GPT-SoVITS-Models"
+$funasr_models = @(
+    @{ name = "speech_fsmn_vad_zh-cn-16k-common-pytorch"; modelscope_id = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch" },
+    @{ name = "punc_ct-transformer_zh-cn-common-vocab272727-pytorch"; modelscope_id = "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch" },
+    @{ name = "speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"; modelscope_id = "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch" }
+)
 
-# Model definitions: (model_name, modelscope_id)
-models = [
-    ('speech_fsmn_vad_zh-cn-16k-common-pytorch', 'iic/speech_fsmn_vad_zh-cn-16k-common-pytorch'),
-    ('punc_ct-transformer_zh-cn-common-vocab272727-pytorch', 'iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch'),
-    ('speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch', 'iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch'),
-]
+$huggingface_cli = "$envPath\Scripts\huggingface-cli.exe"
+$modelscope_cli = "$envPath\Scripts\modelscope.exe"
 
-HF_CACHE_REPO = 'sky1218/GPT-SoVITS-Models'
-
-def download_from_hf(model_name, local_dir):
-    """Try downloading from user's HuggingFace cache (global CDN)"""
-    try:
-        from huggingface_hub import snapshot_download
-        print(f'[INFO] Trying HuggingFace cache for {model_name}...')
-        snapshot_download(
-            repo_id=HF_CACHE_REPO,
-            allow_patterns=f'{model_name}/*',
-            local_dir=local_dir + '_tmp'
-        )
-        # Move from subfolder to target
-        src = os.path.join(local_dir + '_tmp', model_name)
-        if os.path.exists(src) and os.listdir(src):
-            if os.path.exists(local_dir):
-                shutil.rmtree(local_dir)
-            shutil.move(src, local_dir)
-            shutil.rmtree(local_dir + '_tmp', ignore_errors=True)
-            print(f'[INFO] Downloaded {model_name} from HuggingFace cache')
-            return True
-    except Exception as e:
-        print(f'[INFO] HuggingFace cache not available: {e}')
-    return False
-
-def download_from_modelscope(model_name, modelscope_id, local_dir, max_retries=5):
-    """Download from ModelScope with retry"""
-    import time
-    for i in range(max_retries):
-        try:
-            from modelscope import snapshot_download
-            print(f'[INFO] Downloading {model_name} from ModelScope...')
-            snapshot_download(modelscope_id, local_dir=local_dir)
-            print(f'[INFO] Downloaded {model_name} from ModelScope')
-            return True
-        except Exception as e:
-            print(f'[WARN] Attempt {i+1} failed: {e}')
-            if i < max_retries - 1:
-                print('Retrying in 10 seconds...')
-                time.sleep(10)
-    return False
-
-for model_name, modelscope_id in models:
-    local_dir = os.path.join(models_dir, model_name)
+foreach ($model in $funasr_models) {
+    $modelName = $model.name
+    $modelscopeId = $model.modelscope_id
+    $localDir = "$asrModelsDir\$modelName"
     
-    if os.path.exists(local_dir) and os.listdir(local_dir):
-        print(f'[INFO] {model_name} already exists, skipping')
+    if ((Test-Path $localDir) -and (Get-ChildItem $localDir -ErrorAction SilentlyContinue)) {
+        Write-Host "[INFO] $modelName already exists, skipping"
         continue
+    }
     
-    # Try HuggingFace cache first, then ModelScope
-    if not download_from_hf(model_name, local_dir):
-        if not download_from_modelscope(model_name, modelscope_id, local_dir):
-            print(f'[ERROR] Failed to download {model_name}')
-            sys.exit(1)
+    $downloaded = $false
+    
+    # Try HuggingFace first
+    Write-Host "[INFO] Trying HuggingFace cache for $modelName..."
+    $tmpDir_hf = "${localDir}_tmp"
+    try {
+        & $huggingface_cli download $HF_CACHE_REPO --include "$modelName/*" --local-dir $tmpDir_hf --quiet 2>$null
+        $srcPath = "$tmpDir_hf\$modelName"
+        if ((Test-Path $srcPath) -and (Get-ChildItem $srcPath -ErrorAction SilentlyContinue)) {
+            if (Test-Path $localDir) { Remove-Item $localDir -Recurse -Force }
+            Move-Item $srcPath $localDir -Force
+            Remove-Item $tmpDir_hf -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "[INFO] Downloaded $modelName from HuggingFace cache"
+            $downloaded = $true
+        }
+    } catch {
+        Write-Host "[INFO] HuggingFace cache not available"
+    }
+    
+    # Fallback to ModelScope
+    if (-not $downloaded) {
+        for ($i = 1; $i -le 5; $i++) {
+            try {
+                Write-Host "[INFO] Downloading $modelName from ModelScope (attempt $i)..."
+                & $modelscope download --model $modelscopeId --local_dir $localDir 2>$null
+                if ((Test-Path $localDir) -and (Get-ChildItem $localDir -ErrorAction SilentlyContinue)) {
+                    Write-Host "[INFO] Downloaded $modelName from ModelScope"
+                    $downloaded = $true
+                    break
+                }
+            } catch {
+                Write-Host "[WARN] Attempt $i failed: $_"
+                if ($i -lt 5) {
+                    Write-Host "Retrying in 10 seconds..."
+                    Start-Sleep -Seconds 10
+                }
+            }
+        }
+    }
+    
+    if (-not $downloaded) {
+        Write-Error "[ERROR] Failed to download $modelName"
+        exit 1
+    }
+}
 
-print('[INFO] All FunASR models downloaded successfully!')
-"@
-
-$modelscriptContent | Out-File -FilePath "$tmpDir\download_funasr.py" -Encoding UTF8
-& $python "$tmpDir\download_funasr.py"
-Remove-Item "$tmpDir\download_funasr.py" -Force
+Write-Host "[INFO] All FunASR models downloaded successfully!"
 
 # ============================================
 # PHASE 3: Package
