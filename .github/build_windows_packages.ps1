@@ -221,8 +221,16 @@ switch ($cuda) {
 
 # === Install Dependencies ===
 Write-Host "`n[8/9] Installing dependencies..."
-& $pip install -r requirements.txt --no-warn-script-location
-& $pip install -r extra-req.txt --no-warn-script-location
+# Remove --no-binary constraint for faster installation
+# Create temporary requirements without --no-binary
+$reqContent = Get-Content "requirements.txt" | Where-Object { $_ -notmatch "^--no-binary" }
+$reqContent | Out-File "requirements_optimized.txt" -Encoding UTF8
+
+# Install with optimizations
+& $pip install -r requirements_optimized.txt --no-warn-script-location -v
+& $pip install -r extra-req.txt --no-warn-script-location -v
+
+Remove-Item "requirements_optimized.txt" -Force
 
 # Cleanup caches to reduce package size
 Write-Host "[INFO] Cleaning up caches..."

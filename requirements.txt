@@ -1,4 +1,3 @@
---no-binary=opencc
 setuptools<81
 numpy<2.0
 scipy
