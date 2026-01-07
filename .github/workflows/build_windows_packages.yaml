@@ -112,16 +112,24 @@ jobs:
           }
           pip install modelscope -q
           $file = Get-Item "*.tar.zst"
-          Write-Host "Uploading $($file.Name) to ModelScope..."
+          $fileName = $file.Name
+          Write-Host "Uploading $fileName to ModelScope..."
           python -c @"
+          import os
           from modelscope.hub.api import HubApi
+          
           api = HubApi()
-          api.login('$env:MS_TOKEN')
-          api.push_model(
-              model_id='${{ env.MS_REPO }}',
-              model_dir='.',
-              commit_message='Upload Windows package ${{ steps.pkg.outputs.name }}'
+          api.login(os.environ['MS_TOKEN'])
+          
+          # Upload single file instead of folder
+          api.upload_file(
+              path_or_fileobj='$fileName',
+              path_in_repo='$fileName',
+              repo_id='${{ env.MS_REPO }}',
+              repo_type='model',
+              commit_message='Upload $fileName'
           )
+          print(f'[INFO] Uploaded $fileName to ModelScope')
           "@
 
       - name: Save Release Info
