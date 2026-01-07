@@ -296,7 +296,7 @@ Write-Host "[INFO] Downloaded fast-langdetect model"
 
 # Download FunASR models using Python
 Write-Host "[INFO] Downloading FunASR models..."
-& $pip install huggingface_hub -q --no-warn-script-location
+& $pip install "huggingface_hub[hf_xet]" -q --no-warn-script-location
 
 $asrModelsDir = "$srcDir\tools\asr\models"
 New-Item -ItemType Directory -Force -Path $asrModelsDir | Out-Null
@@ -359,8 +359,7 @@ def download_subfolder(repo_id, subfolder, local_dir):
             repo_id=repo_id,
             local_dir=local_dir,
             repo_type="model",
-            allow_patterns=[f"{subfolder}/*"],
-            local_dir_use_symlinks=False
+            allow_patterns=[f"{subfolder}/*"]
         )
         
         # Move files from subfolder to local_dir root
