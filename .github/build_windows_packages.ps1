@@ -171,22 +171,29 @@ Write-Host "`n=========================================="
 Write-Host "  PHASE 2: Setting up Environment"
 Write-Host "=========================================="
 
-# === Install Miniconda ===
-Write-Host "`n[6/9] Installing Miniconda..."
-$condaInstaller = "$tmpDir\miniconda.exe"
+# === Install Micromamba ===
+Write-Host "`n[6/9] Installing Micromamba..."
 $condaPath = "$srcDir\runtime"
+$mambaExe = "$condaPath\micromamba.exe"
 
-Invoke-WebRequest "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe" -OutFile $condaInstaller
-Start-Process -FilePath $condaInstaller -ArgumentList "/S", "/D=$condaPath" -Wait
-Remove-Item $condaInstaller
+New-Item -ItemType Directory -Force -Path $condaPath | Out-Null
+Invoke-WebRequest "https://micro.mamba.pm/api/micromamba/win-64/latest" -OutFile "$tmpDir\micromamba.tar.bz2"
 
-$conda = "$condaPath\Scripts\conda.exe"
-$pip = "$condaPath\Scripts\pip.exe"
-$python = "$condaPath\python.exe"
+# Extract micromamba
+tar -xf "$tmpDir\micromamba.tar.bz2" -C $tmpDir
+Copy-Item "$tmpDir\Library\bin\micromamba.exe" $mambaExe -Force
+Remove-Item "$tmpDir\micromamba.tar.bz2" -Force
+Remove-Item "$tmpDir\Library" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$tmpDir\info" -Recurse -Force -ErrorAction SilentlyContinue
 
-Write-Host "[INFO] Setting up Python 3.11..."
-& $conda install python=3.11 -y -q
-& $conda clean -afy | Out-Null
+# Setup micromamba environment
+$env:MAMBA_ROOT_PREFIX = $condaPath
+& $mambaExe create -n base -y -q
+& $mambaExe install -n base python=3.11 -c conda-forge -y -q
+& $mambaExe clean -afy | Out-Null
+
+$pip = "$condaPath\envs\base\Scripts\pip.exe"
+$python = "$condaPath\envs\base\python.exe"
 
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
@@ -207,14 +214,63 @@ switch ($cuda) {
 Write-Host "`n[8/9] Installing dependencies..."
 & $pip install -r requirements.txt --no-warn-script-location
 & $pip install -r extra-req.txt --no-warn-script-location
+
+# Cleanup caches to reduce package size
+Write-Host "[INFO] Cleaning up caches..."
 & $pip cache purge
+& $mambaExe clean -afy | Out-Null
+Remove-Item "$condaPath\pkgs" -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path "$condaPath\pkgs" | Out-Null
+Remove-Item "$env:USERPROFILE\.cache" -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove unnecessary files from site-packages
+$sitePackages = "$condaPath\envs\base\Lib\site-packages"
+Get-ChildItem $sitePackages -Recurse -Include "*.pyc", "*.pyo" | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Directory -Filter "tests" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Directory -Filter "test" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem $sitePackages -Recurse -Include "*.dist-info" -Directory | ForEach-Object {
+    Get-ChildItem $_.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# Remove Triton (not used on Windows)
+Remove-Item "$sitePackages\triton*" -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove unnecessary CUDA files from PyTorch
+$torchLib = "$sitePackages\torch\lib"
+if (Test-Path $torchLib) {
+    Get-ChildItem $torchLib -Filter "*.dll" | Where-Object { 
+        $_.Name -match "nvrtc-builtins"
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# Remove ModelScope cache files
+Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove Triton (not used on Windows)
+Remove-Item "$sitePackages\triton*" -Recurse -Force -ErrorAction SilentlyContinue
+
+# Remove unnecessary CUDA files from PyTorch
+$torchLib = "$sitePackages\torch\lib"
+if (Test-Path $torchLib) {
+    Get-ChildItem $torchLib -Filter "*.dll" | Where-Object { 
+        $_.Name -match "nvrtc-builtins"
+    } | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# Remove ModelScope cache files
+Get-ChildItem "$asrModelsDir" -Recurse -Filter ".msc" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.lock" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem "$asrModelsDir" -Recurse -Filter "*.git*" -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
 # Extract FFmpeg
 Write-Host "[INFO] Extracting FFmpeg..."
 Expand-Archive $ffZip -DestinationPath $tmpDir -Force
 $ffDir = Get-ChildItem -Directory "$tmpDir" | Where-Object { $_.Name -like "ffmpeg*" } | Select-Object -First 1
-Copy-Item "$($ffDir.FullName)\bin\ffmpeg.exe" "$condaPath" -Force
-Copy-Item "$($ffDir.FullName)\bin\ffprobe.exe" "$condaPath" -Force
+Copy-Item "$($ffDir.FullName)\bin\ffmpeg.exe" "$condaPath\envs\base" -Force
+Copy-Item "$($ffDir.FullName)\bin\ffprobe.exe" "$condaPath\envs\base" -Force
 Remove-Item $ffZip
 Remove-Item $ffDir.FullName -Recurse -Force
 

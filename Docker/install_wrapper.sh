@@ -9,9 +9,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 cd "$SCRIPT_DIR/.." || exit 1
 
-# 啟動 conda 環境
+# 啟動 micromamba 環境
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate base
 
 # 呼叫主安裝腳本（PyTorch、依賴、預訓練模型都在這裡處理）
 echo "[INFO] Running main install script..."
