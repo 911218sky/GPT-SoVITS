@@ -266,19 +266,6 @@ if ($testDir) {
     $testDir | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Clean up dist-info directories (keep only essential files)
-$distInfoDirs = Get-ChildItem $sitePackages -Directory -Filter "*.dist-info" -ErrorAction SilentlyContinue
-if ($distInfoDirs) {
-    foreach ($dir in $distInfoDirs) {
-        if ($dir -and $dir.FullName -and (Test-Path $dir.FullName)) {
-            $filesToRemove = Get-ChildItem $dir.FullName -Exclude "METADATA", "RECORD", "WHEEL", "entry_points.txt", "top_level.txt" -ErrorAction SilentlyContinue
-            if ($filesToRemove) {
-                $filesToRemove | Remove-Item -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-}
-
 # Remove Triton (not used on Windows)
 $tritonDirs = Get-ChildItem "$sitePackages" -Directory -Filter "triton*" -ErrorAction SilentlyContinue
 if ($tritonDirs) {
