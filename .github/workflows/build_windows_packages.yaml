@@ -158,6 +158,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: success()
+    env:
+      HF_REPO: ${{ github.event.inputs.hf_repo || 'sky1218/GPT-SoVITS-Packages' }}
+      MS_REPO: ${{ github.event.inputs.ms_repo || 'sky1218/GPT-SoVITS-Packages' }}
     steps:
       - uses: actions/checkout@v4
 
