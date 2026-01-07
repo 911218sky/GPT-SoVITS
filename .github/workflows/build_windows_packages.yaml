@@ -14,6 +14,7 @@ on:
 
 env:
   HF_REPO: sky1218/GPT-SoVITS-Packages
+  MS_REPO: sky1218/GPT-SoVITS-Packages
 
 jobs:
   build:
@@ -88,6 +89,29 @@ jobs:
           $file = Get-Item "*.tar.zst"
           Write-Host "Uploading $($file.Name) to Hugging Face..."
           python scripts/upload_to_hf.py "$($file.Name)" "${{ env.HF_REPO }}"
+
+      - name: Upload to ModelScope
+        env:
+          MS_TOKEN: ${{ secrets.MS_TOKEN }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace("${{ env.MS_TOKEN }}")) {
+            Write-Host "[WARN] MS_TOKEN not set, skipping ModelScope upload"
+            exit 0
+          }
+          pip install modelscope -q
+          $file = Get-Item "*.tar.zst"
+          Write-Host "Uploading $($file.Name) to ModelScope..."
+          python -c "
+from modelscope.hub.api import HubApi
+api = HubApi()
+api.login('${{ env.MS_TOKEN }}')
+api.push_model(
+    model_id='${{ env.MS_REPO }}',
+    model_dir='.',
+    commit_message='Upload Windows package ${{ steps.pkg.outputs.name }}'
+)
+"
 
       - name: Save Release Info
         shell: pwsh
