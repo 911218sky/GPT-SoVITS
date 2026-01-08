@@ -306,21 +306,8 @@ rm -f "${SRC_DIR}"/*.bat
 rm -f "${SRC_DIR}"/*.ps1
 rm -f "${SRC_DIR}"/*.ipynb
 
-# Create startup scripts
-cat > "${SRC_DIR}/go-webui.sh" << 'EOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-./runtime/python/bin/python webui.py
-EOF
+# Make startup scripts executable
 chmod +x "${SRC_DIR}/go-webui.sh"
-
-cat > "${SRC_DIR}/go-api.sh" << 'EOF'
-#!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-./runtime/python/bin/python api_v2.py
-EOF
 chmod +x "${SRC_DIR}/go-api.sh"
 
 # Create symlink for packaging
