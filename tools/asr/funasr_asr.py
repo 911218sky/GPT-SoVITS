@@ -21,30 +21,43 @@ def only_asr(input_file, language):
     return text
 
 
+def _model_exists(path):
+    """Check if model directory exists and contains model files"""
+    if not os.path.exists(path):
+        return False
+    # Check for common model files
+    files = os.listdir(path)
+    return any(f.endswith(('.bin', '.pt', '.ckpt', '.pb', '.yaml', '.json')) for f in files)
+
+
 def create_model(language="zh"):
     if language == "zh":
         path_vad = "tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch"
         path_punc = "tools/asr/models/punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
         path_asr = "tools/asr/models/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
-        snapshot_download(
-            "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-            local_dir="tools/asr/models/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-        )
-        snapshot_download(
-            "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
-            local_dir="tools/asr/models/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
-        )
-        snapshot_download(
-            "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-            local_dir="tools/asr/models/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
-        )
+        if not _model_exists(path_vad):
+            snapshot_download(
+                "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+                local_dir=path_vad,
+            )
+        if not _model_exists(path_punc):
+            snapshot_download(
+                "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
+                local_dir=path_punc,
+            )
+        if not _model_exists(path_asr):
+            snapshot_download(
+                "iic/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+                local_dir=path_asr,
+            )
         model_revision = "v2.0.4"
     elif language == "yue":
         path_asr = "tools/asr/models/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online"
-        snapshot_download(
-            "iic/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
-            local_dir="tools/asr/models/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
-        )
+        if not _model_exists(path_asr):
+            snapshot_download(
+                "iic/speech_UniASR_asr_2pass-cantonese-CHS-16k-common-vocab1468-tensorflow1-online",
+                local_dir=path_asr,
+            )
         path_vad = path_punc = None
         vad_model_revision = punc_model_revision = ""
         model_revision = "master"
