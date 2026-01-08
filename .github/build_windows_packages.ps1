@@ -7,7 +7,7 @@ Write-Host "=========================================="
 # === Configuration ===
 $cuda = $env:TORCH_CUDA
 if (-not $cuda) {
-    Write-Error "Missing TORCH_CUDA env (cu124 or cu128)"
+    Write-Error "Missing TORCH_CUDA env (cu118, cu126, or cu128)"
     exit 1
 }
 
@@ -234,20 +234,17 @@ Write-Host "[INFO] Standalone Python installed at: $python"
 # === Install PyTorch ===
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
 switch ($cuda) {
+    "cu118" {
+        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu118
+    }
     "cu126" {
-        & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
+        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
     }
     "cu128" {
-        & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
-    }
-    "cu129" {
-        & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu129
-    }
-    "cu130" {
-        & $uv pip install --python $python torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0 --index-url https://download.pytorch.org/whl/cu130
+        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
     }
     default {
-        Write-Error "Unsupported CUDA version: $cuda"
+        Write-Error "Unsupported CUDA version: $cuda (supported: cu118, cu126, cu128)"
         exit 1
     }
 }

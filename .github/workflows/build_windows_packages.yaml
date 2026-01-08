@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        torch_cuda: [cu126, cu128, cu129, cu130]
+        torch_cuda: [cu118, cu126, cu128]
     env:
       TORCH_CUDA: ${{ matrix.torch_cuda }}
       DATE_SUFFIX: ${{ github.event.inputs.date }}
