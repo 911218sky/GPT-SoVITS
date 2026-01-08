@@ -1,8 +1,9 @@
 ARG CUDA_VERSION=12.6
+ARG UBUNTU_VERSION=24.04
 
 # Build Stage
-# Note: CUDA 13.x uses format like 13.0.0, while 12.x uses 12.6, 12.8, etc.
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS builder
+# Note: CUDA 11.8 requires Ubuntu 22.04, CUDA 12.x+ supports Ubuntu 24.04
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION} AS builder
 
 LABEL maintainer="sky1218"
 LABEL version="V4"
@@ -45,7 +46,9 @@ RUN uv cache clean && \
     find /root/uv/env -name "*.a" -delete 2>/dev/null || true
 
 # Final Stage
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04
+ARG CUDA_VERSION=12.6
+ARG UBUNTU_VERSION=24.04
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu${UBUNTU_VERSION}
 
 ARG CUDA_VERSION=12.6
 ENV CUDA_VERSION=${CUDA_VERSION}

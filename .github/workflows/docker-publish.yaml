@@ -15,10 +15,13 @@ jobs:
       matrix:
         include:
           - cuda_version: 11.8.0
+            ubuntu_version: 22.04
             tag_prefix: cu118
           - cuda_version: 12.6.0
+            ubuntu_version: 24.04
             tag_prefix: cu126
           - cuda_version: 12.8.0
+            ubuntu_version: 24.04
             tag_prefix: cu128
 
     steps:
@@ -77,6 +80,7 @@ jobs:
           platforms: linux/amd64
           build-args: |
             CUDA_VERSION=${{ matrix.cuda_version }}
+            UBUNTU_VERSION=${{ matrix.ubuntu_version }}
           outputs: type=image,compression=zstd,compression-level=3,force-compression=true
           tags: |
             ${{ github.event.inputs.docker_repo }}:${{ matrix.tag_prefix }}
