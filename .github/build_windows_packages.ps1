@@ -240,6 +240,12 @@ switch ($cuda) {
     "cu128" {
         & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
     }
+    "cu129" {
+        & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu129
+    }
+    "cu130" {
+        & $uv pip install --python $python torch==2.9.0 torchvision==0.24.0 torchaudio==2.9.0 --index-url https://download.pytorch.org/whl/cu130
+    }
     default {
         Write-Error "Unsupported CUDA version: $cuda"
         exit 1

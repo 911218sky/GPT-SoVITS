@@ -76,7 +76,7 @@ print_help() {
     echo "Usage: bash install.sh [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --device   CU126|CU128|ROCM|MPS|CPU    Specify the Device (REQUIRED)"
+    echo "  --device   CU126|CU128|CU129|CU130|ROCM|MPS|CPU    Specify the Device (REQUIRED)"
     echo "  --source   HF|HF-Mirror|ModelScope     Specify the model source (REQUIRED)"
     echo "  --download-uvr5                        Enable downloading the UVR5 model"
     echo "  -h, --help                             Show this help message and exit"
@@ -124,6 +124,14 @@ while [[ $# -gt 0 ]]; do
             CUDA=128
             USE_CUDA=true
             ;;
+        CU129)
+            CUDA=129
+            USE_CUDA=true
+            ;;
+        CU130)
+            CUDA=130
+            USE_CUDA=true
+            ;;
         ROCM)
             USE_ROCM=true
             ;;
@@ -135,7 +143,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo -e "${ERROR}Error: Invalid Device: $2"
-            echo -e "${ERROR}Choose From: [CU126, CU128, ROCM, MPS, CPU]"
+            echo -e "${ERROR}Choose From: [CU126, CU128, CU129, CU130, ROCM, MPS, CPU]"
             exit 1
             ;;
         esac
@@ -300,8 +308,19 @@ TORCH_VERSION="2.8.0"
 TORCHVISION_VERSION="0.23.0"
 TORCHAUDIO_VERSION="2.8.0"
 
+# PyTorch 2.9.0 for CUDA 13.0
+TORCH_VERSION_29="2.9.0"
+TORCHVISION_VERSION_29="0.24.0"
+TORCHAUDIO_VERSION_29="2.9.0"
+
 if [ "$USE_CUDA" = true ]; then
-    if [ "$CUDA" = 128 ]; then
+    if [ "$CUDA" = 130 ]; then
+        echo -e "${INFO}Installing PyTorch ${TORCH_VERSION_29} For CUDA 13.0..."
+        run_uv_quiet torch==${TORCH_VERSION_29} torchvision==${TORCHVISION_VERSION_29} torchaudio==${TORCHAUDIO_VERSION_29} torchcodec --index-url "https://download.pytorch.org/whl/cu130"
+    elif [ "$CUDA" = 129 ]; then
+        echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CUDA 12.9..."
+        run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu129"
+    elif [ "$CUDA" = 128 ]; then
         echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CUDA 12.8..."
         run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu128"
     elif [ "$CUDA" = 126 ]; then
