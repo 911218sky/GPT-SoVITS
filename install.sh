@@ -296,9 +296,9 @@ fi
 
 # Install PyTorch based on device selection
 # PyTorch version configuration
-TORCH_VERSION="2.7.1"
-TORCHVISION_VERSION="0.22.1"
-TORCHAUDIO_VERSION="2.7.1"
+TORCH_VERSION="2.8.0"
+TORCHVISION_VERSION="0.23.0"
+TORCHAUDIO_VERSION="2.8.0"
 
 if [ "$USE_CUDA" = true ]; then
     if [ "$CUDA" = 128 ]; then
@@ -309,8 +309,8 @@ if [ "$USE_CUDA" = true ]; then
         run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cu126"
     fi
 elif [ "$USE_ROCM" = true ]; then
-    echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For ROCm 6.2..."
-    run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/rocm6.2"
+    echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For ROCm 6.4..."
+    run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/rocm6.4"
 elif [ "$USE_CPU" = true ]; then
     echo -e "${INFO}Installing PyTorch ${TORCH_VERSION} For CPU..."
     run_uv_quiet torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} torchcodec --index-url "https://download.pytorch.org/whl/cpu"
