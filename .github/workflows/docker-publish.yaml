@@ -23,6 +23,12 @@ jobs:
           - cuda_version: 12.8.0
             ubuntu_version: 24.04
             tag_prefix: cu128
+          - cuda_version: 12.9.0
+            ubuntu_version: 24.04
+            tag_prefix: cu129
+          - cuda_version: 13.0.0
+            ubuntu_version: 24.04
+            tag_prefix: cu130
 
     steps:
       - name: Checkout Code
