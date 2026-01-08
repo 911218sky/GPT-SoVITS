@@ -174,26 +174,30 @@ Write-Host "=========================================="
 # === Install uv and Create Python Environment ===
 Write-Host "`n[6/9] Installing uv and setting up portable Python environment..."
 $runtimePath = "$srcDir\runtime"
-$envPath = "$runtimePath\env"
+$uvPath = "$runtimePath\uv_bin"
+$envPath = "$runtimePath\python"
 
 New-Item -ItemType Directory -Force -Path $runtimePath | Out-Null
-New-Item -ItemType Directory -Force -Path $envPath | Out-Null
+New-Item -ItemType Directory -Force -Path $uvPath | Out-Null
 
 # Download and install uv
 Write-Host "[INFO] Downloading uv..."
 $uvInstaller = "$tmpDir\uv-installer.ps1"
 Invoke-WebRequest -Uri "https://astral.sh/uv/install.ps1" -OutFile $uvInstaller
-$env:UV_INSTALL_DIR = $runtimePath
+$env:UV_INSTALL_DIR = $uvPath
 & powershell -ExecutionPolicy Bypass -File $uvInstaller
 Remove-Item $uvInstaller -Force -ErrorAction SilentlyContinue
 
-$uv = "$runtimePath\uv.exe"
+$uv = "$uvPath\uv.exe"
 
 # Verify uv exists
 if (-not (Test-Path $uv)) {
     Write-Error "uv not found at $uv"
     exit 1
 }
+
+# Set UV timeout for large downloads
+$env:UV_HTTP_TIMEOUT = "300"
 
 # Download standalone Python
 Write-Host "[INFO] Downloading standalone Python 3.11..."
@@ -207,13 +211,12 @@ Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonArchive
 Write-Host "[INFO] Extracting Python..."
 & tar -xzf $pythonArchive -C $tmpDir
 
-# Move python folder contents to env
+# Move python folder to runtime
 $pythonExtracted = "$tmpDir\python"
 if (Test-Path $pythonExtracted) {
-    Get-ChildItem $pythonExtracted | Move-Item -Destination $envPath -Force
+    Move-Item $pythonExtracted $envPath -Force
 }
 Remove-Item $pythonArchive -Force -ErrorAction SilentlyContinue
-Remove-Item $pythonExtracted -Recurse -Force -ErrorAction SilentlyContinue
 
 $python = "$envPath\python.exe"
 
