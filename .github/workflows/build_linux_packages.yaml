@@ -125,28 +125,7 @@ jobs:
           pip install modelscope -q
           FILE=$(ls *.tar.zst)
           echo "[INFO] Uploading $FILE to ModelScope..."
-          
-          mkdir -p ms_upload
-          cp "$FILE" ms_upload/
-          
-          python -c "
-          import os
-          from modelscope.hub.api import HubApi
-
-          api = HubApi()
-          api.login(os.environ['MS_TOKEN'])
-
-          try:
-              api.upload_folder(
-                  repo_id='${{ env.MS_REPO }}',
-                  folder_path='ms_upload',
-                  revision='master',
-                  commit_message='Upload package'
-              )
-              print('[INFO] Uploaded to ModelScope')
-          except Exception as e:
-              print(f'[WARN] ModelScope upload failed: {e}')
-          "
+          python scripts/upload_to_ms.py "$FILE" "${{ env.MS_REPO }}"
 
       - name: Save Release Info
         run: |
