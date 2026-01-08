@@ -25,7 +25,6 @@ ESSENTIAL_EXTENSIONS = {'.pt', '.bin', '.json', '.yaml', '.onnx', '.pth', '.safe
 MAX_RETRIES = 5
 MAX_WORKERS = 3  # 並行下載數量
 
-
 def clean_model_dir(local_dir: str) -> None:
     """移除非必要的檔案（ModelScope metadata 等）"""
     for root, dirs, files in os.walk(local_dir):
