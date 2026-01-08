@@ -69,35 +69,39 @@ jobs:
           echo "date=$date" >> $env:GITHUB_OUTPUT
           echo "suffix=$suffix" >> $env:GITHUB_OUTPUT
 
-      - name: Upload to Hugging Face
+      - name: Upload to Hugging Face and ModelScope (Parallel)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        shell: pwsh
-        run: |
-          pip install huggingface_hub -q
-          $file = Get-Item "*.tar.zst"
-          Write-Host "Uploading $($file.Name) to Hugging Face..."
-          python scripts/upload_to_hf.py "$($file.Name)" "${{ env.HF_REPO }}"
-
-      - name: Upload to ModelScope
-        env:
           MS_TOKEN: ${{ secrets.MS_TOKEN }}
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace("$env:MS_TOKEN")) {
-            Write-Host "[WARN] MS_TOKEN not set, skipping ModelScope upload"
-            exit 0
-          }
-          pip install modelscope -q
+          pip install huggingface_hub modelscope -q
           $file = Get-Item "*.tar.zst"
           $fileName = $file.Name
           
-          # Create temp folder with only the file to upload
+          # Create temp folder for ModelScope
           New-Item -ItemType Directory -Force -Path "ms_upload" | Out-Null
           Copy-Item $fileName "ms_upload/"
           
-          Write-Host "Uploading $fileName to ModelScope..."
-          python -c @"
+          # Start HuggingFace upload in background
+          Write-Host "[INFO] Starting parallel uploads..."
+          $hfJob = Start-Job -ScriptBlock {
+            param($fileName, $hfRepo)
+            $env:HF_TOKEN = $using:env:HF_TOKEN
+            Set-Location $using:PWD
+            Write-Host "Uploading $fileName to Hugging Face..."
+            python scripts/upload_to_hf.py $fileName $hfRepo
+          } -ArgumentList $fileName, "${{ env.HF_REPO }}"
+          
+          # Start ModelScope upload in background (if token exists)
+          $msJob = $null
+          if (-not [string]::IsNullOrWhiteSpace("$env:MS_TOKEN")) {
+            $msJob = Start-Job -ScriptBlock {
+              param($fileName, $msRepo)
+              $env:MS_TOKEN = $using:env:MS_TOKEN
+              Set-Location $using:PWD
+              Write-Host "Uploading $fileName to ModelScope..."
+              python -c @"
           import os
           from modelscope.hub.api import HubApi
           
@@ -106,7 +110,7 @@ jobs:
           
           try:
               api.upload_folder(
-                  repo_id='${{ env.MS_REPO }}',
+                  repo_id='$msRepo',
                   folder_path='ms_upload',
                   revision='master',
                   commit_message='Upload $fileName'
@@ -114,8 +118,23 @@ jobs:
               print('[INFO] Uploaded $fileName to ModelScope')
           except Exception as e:
               print(f'[WARN] ModelScope upload failed: {e}')
-              print('[INFO] You can manually upload the file from HuggingFace')
           "@
+            } -ArgumentList $fileName, "${{ env.MS_REPO }}"
+          } else {
+            Write-Host "[WARN] MS_TOKEN not set, skipping ModelScope upload"
+          }
+          
+          # Wait for all jobs to complete
+          Write-Host "[INFO] Waiting for uploads to complete..."
+          $hfResult = Receive-Job -Job $hfJob -Wait -AutoRemoveJob
+          Write-Host $hfResult
+          
+          if ($msJob) {
+            $msResult = Receive-Job -Job $msJob -Wait -AutoRemoveJob
+            Write-Host $msResult
+          }
+          
+          Write-Host "[INFO] All uploads completed!"
 
       - name: Save Release Info
         shell: pwsh
