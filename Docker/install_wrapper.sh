@@ -12,9 +12,13 @@ cd "$SCRIPT_DIR/.." || exit 1
 # 啟動 uv 環境
 source "$HOME/uv/etc/profile.d/uv.sh"
 
+# 轉換 CUDA 版本格式：12.6.0 -> CU126, 13.0.0 -> CU130
+CUDA_MAJOR_MINOR=$(echo "$CUDA_VERSION" | cut -d'.' -f1,2 | tr -d '.')
+DEVICE_ARG="CU${CUDA_MAJOR_MINOR}"
+
 # 呼叫主安裝腳本（PyTorch、依賴、預訓練模型都在這裡處理）
-echo "[INFO] Running main install script..."
-bash install.sh --device "CU${CUDA_VERSION//./}" --source HF --download-uvr5
+echo "[INFO] Running main install script with device: $DEVICE_ARG"
+bash install.sh --device "$DEVICE_ARG" --source HF --download-uvr5
 
 # === Docker 專用：下載額外模型 ===
 
