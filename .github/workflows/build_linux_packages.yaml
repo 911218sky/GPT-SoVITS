@@ -1,0 +1,227 @@
+name: Build and Upload Linux Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Date suffix (optional)"
+        required: false
+        default: ""
+      suffix:
+        description: "Package name suffix (optional)"
+        required: false
+        default: ""
+      hf_repo:
+        description: "HuggingFace repo for packages (e.g. sky1218/GPT-SoVITS-Packages)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Packages"
+      ms_repo:
+        description: "ModelScope repo for packages (e.g. sky1218/GPT-SoVITS-Packages)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Packages"
+      hf_models_repo:
+        description: "HuggingFace repo for models cache (e.g. sky1218/GPT-SoVITS-Models)"
+        required: false
+        default: "sky1218/GPT-SoVITS-Models"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        torch_cuda: [cu126, cu128, cu129, cu130]
+    env:
+      TORCH_CUDA: ${{ matrix.torch_cuda }}
+      DATE_SUFFIX: ${{ github.event.inputs.date }}
+      PKG_SUFFIX: ${{ github.event.inputs.suffix }}
+      HF_REPO: ${{ github.event.inputs.hf_repo }}
+      MS_REPO: ${{ github.event.inputs.ms_repo }}
+      HF_MODELS_REPO: ${{ github.event.inputs.hf_models_repo }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          echo "Before cleanup:"
+          df -h  
+
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /opt/hostedtoolcache/PyPy
+          sudo rm -rf /opt/hostedtoolcache/go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf /opt/hostedtoolcache/Ruby
+          sudo rm -rf /opt/microsoft
+          sudo rm -rf /opt/pipx
+          sudo rm -rf /opt/az
+          sudo rm -rf /opt/google
+
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/lib/google-cloud-sdk
+          sudo rm -rf /usr/lib/dotnet
+
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/julia*
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/share/miniconda
+          sudo rm -rf /usr/share/az_*
+          sudo rm -rf /usr/share/dotnet
+
+          echo "After cleanup:"
+          df -h
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq zstd
+
+      - name: Build Package
+        env:
+          TORCH_CUDA: ${{ matrix.torch_cuda }}
+          PKG_SUFFIX: ${{ github.event.inputs.suffix }}
+          DATE_SUFFIX: ${{ github.event.inputs.date }}
+          HF_MODELS_REPO: ${{ github.event.inputs.hf_models_repo }}
+        run: |
+          chmod +x ./.github/build_linux_packages.sh
+          ./.github/build_linux_packages.sh
+
+      - name: Move Package to Workspace
+        run: |
+          mv ../*.tar.zst ./
+
+      - name: Generate package info
+        id: pkg
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then DATE=$(date +%m%d); fi
+          SUFFIX="${{ github.event.inputs.suffix }}"
+          PKG_NAME="GPT-SoVITS-${DATE}${SUFFIX}-${{ matrix.torch_cuda }}-linux"
+          echo "name=$PKG_NAME" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "suffix=$SUFFIX" >> $GITHUB_OUTPUT
+
+      - name: Upload to Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install huggingface_hub -q
+          FILE=$(ls *.tar.zst)
+          echo "[INFO] Uploading $FILE to Hugging Face..."
+          python scripts/upload_to_hf.py "$FILE" "${{ env.HF_REPO }}"
+
+      - name: Upload to ModelScope
+        env:
+          MS_TOKEN: ${{ secrets.MS_TOKEN }}
+        if: env.MS_TOKEN != ''
+        run: |
+          pip install modelscope -q
+          FILE=$(ls *.tar.zst)
+          echo "[INFO] Uploading $FILE to ModelScope..."
+          python -c "
+          import os
+          from modelscope.hub.api import HubApi
+
+          api = HubApi()
+          api.login(os.environ['MS_TOKEN'])
+
+          # Create temp folder for upload
+          os.makedirs('ms_upload', exist_ok=True)
+          import shutil
+          shutil.copy('$FILE', 'ms_upload/')
+
+          try:
+              api.upload_folder(
+                  repo_id='${{ env.MS_REPO }}',
+                  folder_path='ms_upload',
+                  revision='master',
+                  commit_message='Upload $FILE'
+              )
+              print('[INFO] Uploaded $FILE to ModelScope')
+          except Exception as e:
+              print(f'[WARN] ModelScope upload failed: {e}')
+          "
+
+      - name: Save Release Info
+        run: |
+          PKG_NAME="${{ steps.pkg.outputs.name }}"
+          DATE="${{ steps.pkg.outputs.date }}"
+          SUFFIX="${{ steps.pkg.outputs.suffix }}"
+          echo -e "${PKG_NAME}\n${DATE}\n${SUFFIX}" > "release_info_${{ matrix.torch_cuda }}_linux.txt"
+
+      - name: Upload Release Info
+        uses: actions/upload-artifact@v4
+        with:
+          name: release_info_${{ matrix.torch_cuda }}_linux
+          path: release_info_${{ matrix.torch_cuda }}_linux.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: success()
+    env:
+      HF_REPO: ${{ github.event.inputs.hf_repo || 'sky1218/GPT-SoVITS-Packages' }}
+      MS_REPO: ${{ github.event.inputs.ms_repo || 'sky1218/GPT-SoVITS-Packages' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Release Info
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release_info_*_linux
+          path: release_infos
+          merge-multiple: true
+
+      - name: Generate Release Body
+        id: body
+        run: |
+          echo "## GPT-SoVITS Linux Package" > release_body.md
+          echo "" >> release_body.md
+          echo "This release contains the Linux package for GPT-SoVITS." >> release_body.md
+          echo "" >> release_body.md
+          echo "### 📥 Download Options" >> release_body.md
+          echo "" >> release_body.md
+          echo "| Package | Hugging Face | ModelScope | ModelScope Mirror |" >> release_body.md
+          echo "|---------|--------------|------------|-------------------|" >> release_body.md
+
+          TAG_NAME=""
+          for file in release_infos/release_info_*_linux.txt; do
+            NAME=$(sed '1q;d' "$file" | tr -d '\r')
+            DATE=$(sed '2q;d' "$file" | tr -d '\r')
+            SUFFIX=$(sed '3q;d' "$file" | tr -d '\r')
+            
+            if [ -z "$TAG_NAME" ]; then
+                TAG_NAME="v${DATE}${SUFFIX}-linux"
+            fi
+            
+            HF_LINK="https://huggingface.co/${{ env.HF_REPO }}/resolve/main/${NAME}.tar.zst"
+            MS_LINK="https://www.modelscope.cn/models/${{ env.MS_REPO }}/resolve/master/${NAME}.tar.zst"
+            MS_MIRROR_LINK="https://github.sky1218.com/modelscope/models/${{ env.MS_REPO }}/resolve/master/${NAME}.tar.zst"
+            echo "| ${NAME}.tar.zst | [⬇️ HuggingFace]($HF_LINK) | [⬇️ ModelScope]($MS_LINK) | [⬇️ Mirror]($MS_MIRROR_LINK) |" >> release_body.md
+          done
+
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+          echo "" >> release_body.md
+          echo "### 📋 Included Models" >> release_body.md
+          echo "- All Pretrained Models (GPT-SoVITS)" >> release_body.md
+          echo "- FunASR Models (VAD, Punctuation, ASR)" >> release_body.md
+          echo "- G2PW Model" >> release_body.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.body.outputs.tag_name }}
+          name: GPT-SoVITS ${{ steps.body.outputs.tag_name }}
+          body_path: release_body.md
+          draft: false
+          prerelease: false
