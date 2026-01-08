@@ -319,8 +319,8 @@ TAR_ZST_PATH="${PKG_NAME}.tar.zst"
 echo "[INFO] Compressing to ${TAR_ZST_PATH}..."
 START_TIME=$(date +%s)
 
-# Compress with zstd
-tar -cf - "$PKG_NAME" | zstd -3 -T0 -o "$TAR_ZST_PATH"
+# Compress with zstd (-h follows symlinks)
+tar -chf - "$PKG_NAME" | zstd -3 -T0 -o "$TAR_ZST_PATH"
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
