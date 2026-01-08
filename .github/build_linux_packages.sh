@@ -126,16 +126,17 @@ echo "=========================================="
 echo ""
 echo "[5/8] Installing uv and setting up portable Python environment..."
 RUNTIME_PATH="${SRC_DIR}/runtime"
-ENV_PATH="${RUNTIME_PATH}/env"
+ENV_PATH="${RUNTIME_PATH}/python"
 
 mkdir -p "$RUNTIME_PATH"
-mkdir -p "$ENV_PATH"
 
-# Download and install uv
+# Download and install uv (to a separate directory to avoid conflict)
 echo "[INFO] Downloading uv..."
-curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$RUNTIME_PATH" sh
+UV_INSTALL_DIR="${RUNTIME_PATH}/uv_bin"
+mkdir -p "$UV_INSTALL_DIR"
+curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$UV_INSTALL_DIR" sh
 
-UV="${RUNTIME_PATH}/uv"
+UV="${UV_INSTALL_DIR}/uv"
 
 if [ ! -f "$UV" ]; then
     echo "[ERROR] uv not found at $UV"
@@ -153,12 +154,11 @@ download_with_retry "$PYTHON_URL" "${TMP_DIR}/python.tar.gz"
 echo "[INFO] Extracting Python..."
 tar -xzf "${TMP_DIR}/python.tar.gz" -C "$TMP_DIR"
 
-# Move python folder contents to env
+# Move python folder to runtime
 if [ -d "${TMP_DIR}/python" ]; then
-    mv "${TMP_DIR}/python"/* "$ENV_PATH/"
+    mv "${TMP_DIR}/python" "$ENV_PATH"
 fi
 rm -f "${TMP_DIR}/python.tar.gz"
-rm -rf "${TMP_DIR}/python"
 
 PYTHON="${ENV_PATH}/bin/python"
 
@@ -168,6 +168,9 @@ if [ ! -f "$PYTHON" ]; then
 fi
 
 echo "[INFO] Standalone Python installed at: $PYTHON"
+
+# Set UV timeout for large downloads
+export UV_HTTP_TIMEOUT=300
 
 # === Install PyTorch ===
 echo ""
@@ -308,7 +311,7 @@ cat > "${SRC_DIR}/go-webui.sh" << 'EOF'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-./runtime/env/bin/python webui.py
+./runtime/python/bin/python webui.py
 EOF
 chmod +x "${SRC_DIR}/go-webui.sh"
 
@@ -316,7 +319,7 @@ cat > "${SRC_DIR}/go-api.sh" << 'EOF'
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
-./runtime/env/bin/python api_v2.py
+./runtime/python/bin/python api_v2.py
 EOF
 chmod +x "${SRC_DIR}/go-api.sh"
 
