@@ -235,10 +235,10 @@ Write-Host "[INFO] Standalone Python installed at: $python"
 Write-Host "`n[7/9] Installing PyTorch ($cuda)..."
 switch ($cuda) {
     "cu126" {
-        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
+        & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu126
     }
     "cu128" {
-        & $uv pip install --python $python torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128
+        & $uv pip install --python $python torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
     }
     default {
         Write-Error "Unsupported CUDA version: $cuda"
