@@ -27,14 +27,6 @@ sudo apt update && sudo apt install -y ffmpeg
 ./local_tts/start_api.sh --role 真人男
 ```
 
-台灣女生模型已加入角色清單，可直接啟動：
-
-```bash
-./local_tts/start_api.sh --role 台灣女生
-```
-
-台灣女生預設使用 `local_tts/assets/GPT_weights_v2Pro/台灣女生-e15.ckpt`、`local_tts/assets/SoVITS_weights_v2Pro/台灣女生_e12_s576.pth`，以及 `local_tts/assets/Data/台灣女生/我要騎車，這個這是我的車.wav`。若資料放在其他位置，可設定 `GPT_SOVITS_TAIWAN_GIRL_MODEL_ROOT` 和 `GPT_SOVITS_TAIWAN_GIRL_DATA_ROOT`。
-
 API 預設監聽 `http://127.0.0.1:9880`，啟動完成後會自動切換到角色模型。也可以只啟動服務、不切模型：
 
 ```bash
@@ -77,16 +69,6 @@ curl -X POST http://127.0.0.1:9880/tts \
 ./local_tts/batch_tts.sh \
   --file-path /mnt/d/novels/my_novel.txt \
   --role 真人男 \
-  --no-set-model
-```
-
-使用台灣女生批量轉換：
-
-```bash
-./local_tts/start_api.sh --role 台灣女生
-./local_tts/batch_tts.sh \
-  --file-path /mnt/d/novels/my_novel.txt \
-  --role 台灣女生 \
   --no-set-model
 ```
 

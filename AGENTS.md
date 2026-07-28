@@ -70,7 +70,7 @@ local_tts/assets/SoVITS_weights_v2Pro/<角色>_e8_s*.pth
 local_tts/assets/Data/<角色>/*.wav
 ```
 
-目前啟用的角色是：`Lele`、`Lele_Pro`、`Sesame`、`真人男`、`阿甘`、`台灣女生`。台灣女生使用 `local_tts/assets/GPT_weights_v2Pro/台灣女生-e15.ckpt`、`local_tts/assets/SoVITS_weights_v2Pro/台灣女生_e12_s576.pth`，以及 `local_tts/assets/Data/台灣女生/我要騎車，這個這是我的車.wav`。若資料不在預設位置，可用 `GPT_SOVITS_TAIWAN_GIRL_MODEL_ROOT` 與 `GPT_SOVITS_TAIWAN_GIRL_DATA_ROOT` 覆蓋。
+目前啟用的角色是：`Lele`、`Lele_Pro`、`Sesame`、`真人男`、`阿甘`。
 
 新增角色時，必須同步修改 `local_tts/common.py` 的角色設定，並確認 GPT 權重、SoVITS 權重、參考音訊與 prompt 文字都存在。
 
@@ -105,15 +105,6 @@ http://127.0.0.1:9874
 
 訓練流程在 WebUI 內依序完成：資料標註/檢查、SSL 特徵提取、語音切分與 SoVITS/GPT 訓練。訓練輸出通常在 `logs/`。不要把訓練輸出直接當成 `local_tts/assets/`，完成訓練後再依角色設定複製或指定對應權重。
 
-目前 `GPT_SoVITS/configs/tts_infer.yaml` 的 `custom` 推理設定載入已重訓完成的台灣女生 `v2Pro` 權重：
-
-```text
-GPT_weights_v2Pro/台灣女生-e15.ckpt
-SoVITS_weights_v2Pro/台灣女生_e12_s576.pth
-```
-
-台灣女生訓練資料來源在 `/home/sky/code/GPT-SoVITS-DATA/台灣女生/`；不要刪除 `raw/` 原始音檔與 `我要騎車，這個這是我的車.wav` 參考音檔。若重新格式化資料，先確認 `.list` 不含 `hello` 這類 ASR 誤標或空白/英文被標成中文的資料。
-
 本機也保留 `v2` 基礎模型作為 fallback：
 
 ```text
@@ -132,7 +123,7 @@ GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth
 
 純英文標註即使被 ASR 誤標為 `ZH`，格式化腳本也會自動改走英文 G2P；混合中文句子仍應標記為 `ZH`。
 
-WebUI 推理頁會從所選 SoVITS 權重推斷 `v2Pro`/`v2ProPlus` 等模型版本；若新增模型後覺得音質很差，先檢查 GPT 與 SoVITS 是否為同一次訓練/同版本的一組，例如台灣女生目前應同時選 `GPT_weights_v2Pro/台灣女生-e15.ckpt` 與 `SoVITS_weights_v2Pro/台灣女生_e12_s576.pth`。不要把 v2/v3 底模 GPT 與 v2Pro SoVITS 混用。
+WebUI 推理頁會從所選 SoVITS 權重推斷 `v2Pro`/`v2ProPlus` 等模型版本；若新增模型後覺得音質很差，先檢查 GPT 與 SoVITS 是否為同一次訓練/同版本的一組。不要把 v2/v3 底模 GPT 與 v2Pro SoVITS 混用。
 
 停止服務使用 `Ctrl+C`。
 

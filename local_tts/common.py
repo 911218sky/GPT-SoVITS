@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,13 +7,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASSET_ROOT = Path(__file__).resolve().parent / "assets"
 MODEL_ROOT = ASSET_ROOT
 DATA_ROOT = ASSET_ROOT / "Data"
-TAIWAN_GIRL_MODEL_ROOT = Path(os.environ.get("GPT_SOVITS_TAIWAN_GIRL_MODEL_ROOT", str(ASSET_ROOT)))
-TAIWAN_GIRL_DATA_ROOT = Path(
-    os.environ.get(
-        "GPT_SOVITS_TAIWAN_GIRL_DATA_ROOT",
-        str(DATA_ROOT / "台灣女生"),
-    )
-)
 
 
 @dataclass(frozen=True)
@@ -62,13 +54,6 @@ ROLE_PROFILES = {
         ref_audio_path=DATA_ROOT / "真人男" / "还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。.wav",
         prompt_text="还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。",
         speed_factor=0.9,
-    ),
-    "台灣女生": RoleProfile(
-        gpt_weights_path=TAIWAN_GIRL_MODEL_ROOT / "GPT_weights_v2Pro" / "台灣女生-e15.ckpt",
-        sovits_weights_path=TAIWAN_GIRL_MODEL_ROOT / "SoVITS_weights_v2Pro" / "台灣女生_e12_s576.pth",
-        ref_audio_path=TAIWAN_GIRL_DATA_ROOT / "我要騎車，這個這是我的車.wav",
-        prompt_text="我要騎車，這個這是我的車",
-        speed_factor=1.0,
     ),
 }
 
