@@ -90,6 +90,9 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1' # 当遇到mps不支持的步骤时使用cpu
 import gradio as gr
+from tools.gradio_compat import patch_gradio_schema
+
+patch_gradio_schema()
 
 n_cpu = cpu_count()
 

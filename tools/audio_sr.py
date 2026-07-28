@@ -6,7 +6,7 @@ AP_BWE_main_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 sys.path.append(AP_BWE_main_dir_path)
 import json
 import torch
-import torchaudio.functional as aF
+from audio_compat import AudioResample
 # from attrdict import AttrDict####will be bug in py3.10
 
 from datasets1.dataset import amp_pha_stft, amp_pha_istft
@@ -42,7 +42,7 @@ class AP_BWE:
         with torch.no_grad():
             # audio, orig_sampling_rate = torchaudio.load(inp_path)
             # audio = audio.to(self.device)
-            audio = aF.resample(audio, orig_freq=orig_sampling_rate, new_freq=self.h.hr_sampling_rate)
+            audio = AudioResample(orig_sampling_rate, self.h.hr_sampling_rate)(audio)
             amp_nb, pha_nb, com_nb = amp_pha_stft(audio, self.h.n_fft, self.h.hop_size, self.h.win_size)
             amp_wb_g, pha_wb_g, com_wb_g = self.model(amp_nb, pha_nb)
             audio_hr_g = amp_pha_istft(amp_wb_g, pha_wb_g, self.h.n_fft, self.h.hop_size, self.h.win_size)

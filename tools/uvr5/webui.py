@@ -2,6 +2,9 @@ import logging
 import os
 import traceback
 
+from tools.gradio_compat import patch_gradio_schema
+
+patch_gradio_schema()
 import gradio as gr
 
 from tools.i18n.i18n import I18nAuto

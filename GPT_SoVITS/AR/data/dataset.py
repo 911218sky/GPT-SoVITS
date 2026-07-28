@@ -223,7 +223,7 @@ class Text2SemanticDataset(Dataset):
         flag = 0
         path_bert = "%s/%s.pt" % (self.path3, item_name)
         if os.path.exists(path_bert) == True:
-            bert_feature = torch.load(path_bert, map_location="cpu")
+            bert_feature = torch.load(path_bert, map_location="cpu", weights_only=True)
         else:
             flag = 1
         if flag == 1:

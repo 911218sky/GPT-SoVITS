@@ -1,9 +1,8 @@
 import os
 import random
 import torch
-import torchaudio
 import torch.utils.data
-import torchaudio.functional as aF
+from audio_compat import AudioResample, load_audio
 
 
 def amp_pha_stft(audio, n_fft, hop_size, win_size, center=True):
@@ -76,7 +75,7 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         filename = self.audio_indexes[index]
         if self._cache_ref_count == 0:
-            audio, orig_sampling_rate = torchaudio.load(os.path.join(self.wavs_dir, filename + ".wav"))
+            audio, orig_sampling_rate = load_audio(os.path.join(self.wavs_dir, filename + ".wav"))
             self.cached_wav = audio
             self._cache_ref_count = self.n_cache_reuse
         else:
@@ -86,10 +85,10 @@ class Dataset(torch.utils.data.Dataset):
         if orig_sampling_rate == self.hr_sampling_rate:
             audio_hr = audio
         else:
-            audio_hr = aF.resample(audio, orig_freq=orig_sampling_rate, new_freq=self.hr_sampling_rate)
+            audio_hr = AudioResample(orig_sampling_rate, self.hr_sampling_rate)(audio)
 
-        audio_lr = aF.resample(audio, orig_freq=orig_sampling_rate, new_freq=self.lr_sampling_rate)
-        audio_lr = aF.resample(audio_lr, orig_freq=self.lr_sampling_rate, new_freq=self.hr_sampling_rate)
+        audio_lr = AudioResample(orig_sampling_rate, self.lr_sampling_rate)(audio)
+        audio_lr = AudioResample(self.lr_sampling_rate, self.hr_sampling_rate)(audio_lr)
         audio_lr = audio_lr[:, : audio_hr.size(1)]
 
         if self.split:

@@ -153,9 +153,9 @@ import signal
 from text.LangSegmenter import LangSegmenter
 from time import time as ttime
 import torch
-import torchaudio
 import librosa
 import soundfile as sf
+from audio_compat import AudioResample, load_audio
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 import uvicorn
@@ -293,7 +293,7 @@ def resample(audio_tensor, sr0, sr1, device):
     global resample_transform_dict
     key = "%s-%s-%s" % (sr0, sr1, str(device))
     if key not in resample_transform_dict:
-        resample_transform_dict[key] = torchaudio.transforms.Resample(sr0, sr1).to(device)
+        resample_transform_dict[key] = AudioResample(sr0, sr1).to(device)
     return resample_transform_dict[key](audio_tensor)
 
 
@@ -638,7 +638,7 @@ class DictToAttrRecursive(dict):
 
 def get_spepc(hps, filename, dtype, device, is_v2pro=False):
     sr1 = int(hps.data.sampling_rate)
-    audio, sr0 = torchaudio.load(filename)
+    audio, sr0 = load_audio(filename)
     if sr0 != sr1:
         audio = audio.to(device)
         if audio.shape[0] == 2:
@@ -973,7 +973,7 @@ def get_tts_wav(
             phoneme_ids1 = torch.LongTensor(phones2).to(device).unsqueeze(0)
 
             fea_ref, ge = vq_model.decode_encp(prompt.unsqueeze(0), phoneme_ids0, refer)
-            ref_audio, sr = torchaudio.load(ref_wav_path)
+            ref_audio, sr = load_audio(ref_wav_path)
             ref_audio = ref_audio.to(device).float()
             if ref_audio.shape[0] == 2:
                 ref_audio = ref_audio.mean(0).unsqueeze(0)

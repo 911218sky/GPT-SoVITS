@@ -7,8 +7,9 @@ import time
 import traceback
 from copy import deepcopy
 
-import torchaudio
 from tqdm import tqdm
+
+from audio_compat import AudioResample, load_audio
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
@@ -43,7 +44,7 @@ def resample(audio_tensor, sr0, sr1, device):
     global resample_transform_dict
     key = "%s-%s-%s" % (sr0, sr1, str(device))
     if key not in resample_transform_dict:
-        resample_transform_dict[key] = torchaudio.transforms.Resample(sr0, sr1).to(device)
+        resample_transform_dict[key] = AudioResample(sr0, sr1).to(device)
     return resample_transform_dict[key](audio_tensor)
 
 
@@ -769,7 +770,7 @@ class TTS:
             self.prompt_cache["refer_spec"][0] = spec_audio
 
     def _get_ref_spec(self, ref_audio_path):
-        raw_audio, raw_sr = torchaudio.load(ref_audio_path)
+        raw_audio, raw_sr = load_audio(ref_audio_path)
         raw_audio = raw_audio.to(self.configs.device).float()
         self.prompt_cache["raw_audio"] = raw_audio
         self.prompt_cache["raw_sr"] = raw_sr

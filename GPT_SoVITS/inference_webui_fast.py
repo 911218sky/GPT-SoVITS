@@ -39,7 +39,6 @@ logging.getLogger("httpcore").setLevel(logging.ERROR)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("asyncio").setLevel(logging.ERROR)
 logging.getLogger("charset_normalizer").setLevel(logging.ERROR)
-logging.getLogger("torchaudio._extension").setLevel(logging.ERROR)
 
 
 infer_ttswebui = os.environ.get("infer_ttswebui", 9872)
@@ -56,6 +55,9 @@ cnhubert_base_path = os.environ.get("cnhubert_base_path", None)
 bert_path = os.environ.get("bert_path", None)
 version = model_version = os.environ.get("version", "v2")
 
+from tools.gradio_compat import patch_gradio_schema
+
+patch_gradio_schema()
 import gradio as gr
 from TTS_infer_pack.text_segmentation_method import get_method
 from TTS_infer_pack.TTS import NO_PROMPT_ERROR, TTS, TTS_Config

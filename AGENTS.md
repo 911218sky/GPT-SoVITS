@@ -51,7 +51,11 @@ uv pip install --python .venv/bin/python -r requirements.txt
 ./local_tts/setup_uv.sh
 ```
 
-`local_tts/.venv` 是約數十 MB 的輕量工具環境；如果根目錄 `.venv` 存在，`local_tts` 啟動器會共用根目錄的 PyTorch、CUDA、Gradio 與 GPT-SoVITS 依賴。不要因為 `local_tts/.venv` 很小而重複安裝一份 GPU 套件。
+`local_tts/.venv` 是約數十 MB 的輕量工具環境，主要提供本機工具與 API 啟動器依賴；訓練 WebUI 必須由 `local_tts/start_web.sh` 使用根目錄 `.venv` 啟動。不要手動把兩個環境的 `site-packages` 混合放進 `PYTHONPATH`，否則可能造成 Gradio、FastAPI、Starlette 版本不相容。
+
+WebUI 目前固定使用 `fastapi==0.115.6` 與 `starlette==0.41.3`，搭配已安裝的 Gradio 4.x。若更新依賴後出現 `TypeError: unhashable type: 'dict'` 或 `TypeError: argument of type 'bool' is not iterable`，先重新同步根目錄 `.venv`，並用 `./local_tts/start_web.sh` 啟動，不要直接使用 `local_tts/.venv/bin/python webui.py`。
+
+目前 GPU 環境使用 `torch==2.12.1+cu132` 與 `torchvision==0.27.1+cu132`。PyTorch 2.12.1 沒有相同版本的 `torchaudio` wheel，因此核心讀音檔與重採樣改由 `audio_compat.py` 使用 `soundfile` 與 `scipy` 完成；不要重新安裝舊版 `torchaudio`。
 
 ## 模型資產配置
 
@@ -194,6 +198,7 @@ curl -X POST http://127.0.0.1:9880/tts \
 - 模型找不到：檢查 `local_tts/assets/` 的檔名、角色名稱與路徑大小寫。
 - API 無法連線：確認 `9880` 沒有被其他程序占用，並先啟動 `start_api.sh`。
 - WebUI 無法連線：確認 `9874` 沒有被占用；WSL 通常使用 `http://localhost:9874` 或 `http://127.0.0.1:9874`。
+- `TypeError: unhashable type: 'dict'` 或 `argument of type 'bool' is not iterable`：通常是 Gradio 與 FastAPI/Starlette 版本不相容，或兩個虛擬環境被混用；使用 `./local_tts/start_web.sh`，不要自行設定跨環境 `PYTHONPATH`。
 - UVR5 人聲分離與音頻標註是主 WebUI 的選用子服務；任一子服務失敗不代表 GPT/SoVITS 訓練或 TTS API 失敗。
 - Fun-ASR-Nano 使用 `qwen3` 架構，請使用 `requirements.txt` 指定的 Transformers 版本；若看到 `KeyError: 'qwen3'`，先重新同步根目錄 `.venv`。
 - `torch.cat(): expected a non-empty list of Tensors`：通常是英文或空白文字被標成 `ZH`；重新執行格式化，並檢查 `.list` 的語言欄位與文字是否正確。

@@ -16,6 +16,9 @@ try:
 except:
     ...
 
+from tools.gradio_compat import patch_gradio_schema
+
+patch_gradio_schema()
 import gradio as gr
 import librosa
 import numpy as np

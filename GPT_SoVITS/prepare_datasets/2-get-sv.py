@@ -18,7 +18,7 @@ import torch
 is_half = eval(os.environ.get("is_half", "True")) and torch.cuda.is_available()
 
 import traceback
-import torchaudio
+from audio_compat import AudioResample, load_audio
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
@@ -62,7 +62,7 @@ class SV:
         embedding_model.load_state_dict(pretrained_state)
         embedding_model.eval()
         self.embedding_model = embedding_model
-        self.res = torchaudio.transforms.Resample(32000, 16000).to(device)
+        self.res = AudioResample(32000, 16000).to(device)
         if is_half == False:
             self.embedding_model = self.embedding_model.to(device)
         else:
@@ -89,7 +89,7 @@ def name2go(wav_name, wav_path):
     if os.path.exists(sv_cn_path):
         return
     wav_path = "%s/%s" % (wav32dir, wav_name)
-    wav32k, sr0 = torchaudio.load(wav_path)
+    wav32k, sr0 = load_audio(wav_path)
     assert sr0 == 32000
     wav32k = wav32k.to(device)
     emb = sv.compute_embedding3(wav32k).cpu()  # torch.Size([1, 20480])
