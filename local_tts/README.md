@@ -59,6 +59,31 @@ curl -X POST http://127.0.0.1:9880/tts \
 
 若 API 啟動時已指定同一個角色，可加上 `--no-set-model` 避免每批次重新載入權重。
 
+### RTX 3060 Ti 長篇小說建議
+
+`batch_tts.sh` 預設已調成單張 RTX 3060 Ti 較穩的長篇小說參數：每次送約 `1800` 字、`cut5` 句子切分、`batch_size=12`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`。不要同時開多個 `batch_tts.sh` 搶同一張 GPU；速度主要靠 API 內部批次，而不是多個 HTTP 請求併發。
+
+```bash
+./local_tts/start_api.sh --role 真人男
+
+./local_tts/batch_tts.sh \
+  --file-path /mnt/d/novels/my_novel.txt \
+  --role 真人男 \
+  --no-set-model
+```
+
+如果遇到 CUDA out of memory，先降到 `--batch-size 8`；如果顯存還很空、聲音正常，再試 `--batch-size 16`。想更容易中斷續跑，可以把 `--max-text-length` 降到 `1000` 到 `1500`。
+
+本機附一份原創測試小說，可用來確認 API 與批次流程：
+
+```bash
+./local_tts/batch_tts.sh \
+  --file-path local_tts/examples/test_novel.txt \
+  --role 真人男 \
+  --no-set-model \
+  --output-dir local_tts/output/test_novel_3060ti
+```
+
 ## 清理靜音
 
 需要系統已安裝 `ffmpeg`：

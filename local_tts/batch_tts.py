@@ -17,7 +17,13 @@ LOGGER = logging.getLogger(__name__)
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:9880"
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_MAX_TEXT_LENGTH = 20000
+DEFAULT_MAX_TEXT_LENGTH = 1800
+DEFAULT_BATCH_SIZE = 12
+DEFAULT_BATCH_THRESHOLD = 0.75
+DEFAULT_FRAGMENT_INTERVAL = 0.05
+DEFAULT_REPETITION_PENALTY = 1.35
+DEFAULT_SPLIT_METHOD = "cut5"
+DEFAULT_TOP_K = 15
 
 
 class TTSRequestPayload(TypedDict):
@@ -97,9 +103,10 @@ def split_text(text: str, max_text_length: int) -> list[str]:
 
 
 def build_payload(profile: RoleProfile, text: str, args: argparse.Namespace) -> TTSRequestPayload:
+    speed_factor = args.speed_factor if args.speed_factor is not None else profile.speed_factor
     return {
         "text": filter_text(text),
-        "text_lang": "zh",
+        "text_lang": args.text_lang,
         "ref_audio_path": str(require_file(profile.ref_audio_path, "參考音訊")),
         "aux_ref_audio_paths": [],
         "prompt_text": profile.prompt_text,
@@ -109,15 +116,15 @@ def build_payload(profile: RoleProfile, text: str, args: argparse.Namespace) -> 
         "temperature": args.temperature,
         "text_split_method": args.split_method,
         "batch_size": args.batch_size,
-        "batch_threshold": 0.75,
-        "split_bucket": False,
-        "speed_factor": profile.speed_factor,
-        "fragment_interval": 0.01,
-        "seed": -1,
+        "batch_threshold": args.batch_threshold,
+        "split_bucket": args.split_bucket,
+        "speed_factor": speed_factor,
+        "fragment_interval": args.fragment_interval,
+        "seed": args.seed,
         "media_type": args.media_type,
         "streaming_mode": False,
-        "parallel_infer": True,
-        "repetition_penalty": 1.35,
+        "parallel_infer": args.parallel_infer,
+        "repetition_penalty": args.repetition_penalty,
     }
 
 
@@ -161,9 +168,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--max-text-length", type=int, default=DEFAULT_MAX_TEXT_LENGTH)
     parser.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES)
-    parser.add_argument("--split-method", choices=["cut1", "cut2", "cut3", "cut4", "cut5"], default="cut2")
-    parser.add_argument("--batch-size", type=int, default=300)
-    parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument("--split-method", choices=["cut1", "cut2", "cut3", "cut4", "cut5"], default=DEFAULT_SPLIT_METHOD)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    parser.add_argument("--batch-threshold", type=float, default=DEFAULT_BATCH_THRESHOLD)
+    parser.add_argument("--split-bucket", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--parallel-infer", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--text-lang", default="zh")
+    parser.add_argument("--speed-factor", type=float, default=None)
+    parser.add_argument("--fragment-interval", type=float, default=DEFAULT_FRAGMENT_INTERVAL)
+    parser.add_argument("--seed", type=int, default=-1)
+    parser.add_argument("--repetition-penalty", type=float, default=DEFAULT_REPETITION_PENALTY)
+    parser.add_argument("--top-k", type=int, default=DEFAULT_TOP_K)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--media-type", choices=["wav", "ogg", "aac"], default="wav")
@@ -184,6 +199,15 @@ def main() -> int:
     text = input_path.read_text(encoding="utf-8", errors="ignore").replace("\n", "").replace(" ", "")
     chunks = split_text(text, args.max_text_length)
     extension = args.media_type
+    LOGGER.info(
+        "批次參數：chunks=%d, max_text_length=%d, split_method=%s, batch_size=%d, split_bucket=%s, parallel_infer=%s",
+        len(chunks),
+        args.max_text_length,
+        args.split_method,
+        args.batch_size,
+        args.split_bucket,
+        args.parallel_infer,
+    )
     for index, chunk in enumerate(tqdm(chunks, desc=str(output_dir))):
         output_path = output_dir / f"{index}.{extension}"
         if output_path.exists():

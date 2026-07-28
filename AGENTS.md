@@ -167,6 +167,18 @@ local_tts/output/GPT_<角色>_<TXT檔名>/
 
 每段語音先輸出為 WAV；可以用 `--output-dir` 指定其他位置。
 
+RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值就是建議起點：`--max-text-length 1800`、`--split-method cut5`、`--batch-size 12`、`--split-bucket`、`--parallel-infer`、`--top-k 15`。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時先改 `--batch-size 8`；顯存仍充足且輸出正常時才試 `--batch-size 16`。
+
+測試批次流程可使用原創樣本：
+
+```bash
+./local_tts/batch_tts.sh \
+  --file-path local_tts/examples/test_novel.txt \
+  --role 真人男 \
+  --no-set-model \
+  --output-dir local_tts/output/test_novel_3060ti
+```
+
 ## 音訊清理與合併
 
 去除短靜音、長靜音並轉成 MP3：
