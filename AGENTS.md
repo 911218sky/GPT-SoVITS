@@ -177,6 +177,7 @@ curl -X POST http://127.0.0.1:9880/tts \
 - API 無法連線：確認 `9880` 沒有被其他程序占用，並先啟動 `start_api.sh`。
 - WebUI 無法連線：確認 `9874` 沒有被占用；WSL 通常使用 `http://localhost:9874` 或 `http://127.0.0.1:9874`。
 - UVR5 人聲分離是主 WebUI 的選用子服務；它失敗不代表 GPT/SoVITS 訓練或 TTS API 失敗。
+- Fun-ASR-Nano 使用 `qwen3` 架構，請使用 `requirements.txt` 指定的 Transformers 版本；若看到 `KeyError: 'qwen3'`，先重新同步根目錄 `.venv`。
 
 ## AI 修改規範
 
