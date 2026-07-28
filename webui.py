@@ -91,6 +91,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 # os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1' # 当遇到mps不支持的步骤时使用cpu
 import gradio as gr
 from tools.gradio_compat import patch_gradio_schema
+from GPT_SoVITS.process_ckpt import get_sovits_version_from_path_fast
 
 patch_gradio_schema()
 
@@ -331,6 +332,13 @@ def change_uvr5():
 process_name_tts = i18n("TTS推理WebUI")
 
 
+def pick_latest_weight(weight_names):
+    trained_weights = [name for name in weight_names if os.path.exists(name)]
+    if trained_weights:
+        return trained_weights[-1]
+    return weight_names[-1] if weight_names else ""
+
+
 def change_tts_inference(bert_path, cnhubert_base_path, gpu_number, gpt_path, sovits_path, batched_infer_enabled):
     global p_tts_inference
     if batched_infer_enabled:
@@ -341,8 +349,10 @@ def change_tts_inference(bert_path, cnhubert_base_path, gpu_number, gpt_path, so
     # if version=="v3":
     #     cmd = '"%s" GPT_SoVITS/inference_webui.py "%s"'%(python_exec, language)
     if p_tts_inference is None:
+        _, model_version, _ = get_sovits_version_from_path_fast(sovits_path)
         os.environ["gpt_path"] = gpt_path
         os.environ["sovits_path"] = sovits_path
+        os.environ["version"] = model_version
         os.environ["cnhubert_base_path"] = cnhubert_base_path
         os.environ["bert_path"] = bert_path
         os.environ["_CUDA_VISIBLE_DEVICES"] = str(fix_gpu_number(gpu_number))
@@ -1877,13 +1887,13 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
                             GPT_dropdown = gr.Dropdown(
                                 label=i18n("GPT模型列表"),
                                 choices=GPT_names,
-                                value=GPT_names[-1],
+                                value=pick_latest_weight(GPT_names),
                                 interactive=True,
                             )
                             SoVITS_dropdown = gr.Dropdown(
                                 label=i18n("SoVITS模型列表"),
                                 choices=SoVITS_names,
-                                value=SoVITS_names[0],
+                                value=pick_latest_weight(SoVITS_names),
                                 interactive=True,
                             )
                     with gr.Column(scale=2):

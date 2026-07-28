@@ -130,6 +130,8 @@ GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth
 
 純英文標註即使被 ASR 誤標為 `ZH`，格式化腳本也會自動改走英文 G2P；混合中文句子仍應標記為 `ZH`。
 
+WebUI 推理頁會從所選 SoVITS 權重推斷 `v2Pro`/`v2ProPlus` 等模型版本；若新增模型後覺得音質很差，先檢查 GPT 與 SoVITS 是否為同一次訓練/同版本的一組，例如台灣女生目前應同時選 `GPT_weights_v2Pro/台灣女生-e15.ckpt` 與 `SoVITS_weights_v2Pro/台灣女生_e12_s576.pth`。不要把 v2/v3 底模 GPT 與 v2Pro SoVITS 混用。
+
 停止服務使用 `Ctrl+C`。
 
 ## 啟動 API 與批次轉語音
