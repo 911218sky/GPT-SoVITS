@@ -48,6 +48,7 @@ sudo apt install -y ffmpeg
 cd /home/sky/code/GPT-SoVITS
 uv venv --allow-existing --python 3.10 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
+uv pip install --no-deps --python .venv/bin/python torchaudio==2.11.0
 .venv/bin/python -m nltk.downloader -d "$HOME/nltk_data" averaged_perceptron_tagger_eng
 ./local_tts/setup_uv.sh
 ```
@@ -56,7 +57,17 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 WebUI 目前固定使用 `fastapi==0.115.6` 與 `starlette==0.41.3`，搭配已安裝的 Gradio 4.x。若更新依賴後出現 `TypeError: unhashable type: 'dict'` 或 `TypeError: argument of type 'bool' is not iterable`，先重新同步根目錄 `.venv`，並用 `./local_tts/start_web.sh` 啟動，不要直接使用 `local_tts/.venv/bin/python webui.py`。
 
-目前 GPU 環境使用 `torch==2.12.1+cu132` 與 `torchvision==0.27.1+cu132`。PyTorch 2.12.1 沒有相同版本的 `torchaudio` wheel，因此核心讀音檔與重採樣改由 `audio_compat.py` 使用 `soundfile` 與 `scipy` 完成；不要重新安裝舊版 `torchaudio`。
+目前 GPU 環境使用 `torch==2.12.1+cu132` 與 `torchvision==0.27.1+cu132`。核心讀音檔與重採樣由 `audio_compat.py` 使用 `soundfile` 與 `scipy` 完成。達摩 Paraformer ASR 使用 `funasr==1.2.6`，因為新版 FunASR 已移除該模型需要的 `WavFrontend`。
+
+Paraformer ASR 額外需要 `torchaudio==2.11.0` 的純 PyTorch Kaldi fbank。它必須以不解析依賴的方式安裝，避免把現有 Torch 降成 CUDA 13.0：
+
+```bash
+uv pip install --no-deps --python .venv/bin/python torchaudio==2.11.0
+```
+
+`tools/asr/funasr_asr.py` 載入時會暫時處理 CUDA 次版本檢查，並由 `tools/asr/torchaudio_compat.py` 覆寫音檔讀取與重採樣，避免 TorchCodec 與原生讀檔後端造成問題。執行 `-s large -l zh` 或 `-s large -l yue` 時會使用 Paraformer Large；首次執行會下載約數百 MB 到模型目錄，這些模型快取是必要資產，不屬於 venv。
+
+WebUI 的 ASR 選項會傳遞明確後端：`達摩 ASR (中文經典)` 使用 `paraformer`，`SenseVoice` 使用 `sensevoice`，`Fun-ASR-Nano` 使用 `fun-asr-nano`。中文訓練建議選擇達摩 ASR，避免在目前 `transformers<4.52` 環境載入需要較新 Qwen3 架構的 Fun-ASR-Nano。
 
 `requirements.txt` 固定使用 `onnxruntime==1.23.2` 的 CPU 版本。`onnxruntime-gpu==1.23.2` 需要 CUDA 12 的 `libcublas.so.12` 等動態庫，與本環境的 CUDA 13.2 不相容；GPT-SoVITS 的 Torch 推理仍使用 GPU，G2PW 與 UVR5 的 ONNX 推理改用 CPU。
 
@@ -70,9 +81,17 @@ local_tts/assets/SoVITS_weights_v2Pro/<角色>_e8_s*.pth
 local_tts/assets/Data/<角色>/*.wav
 ```
 
-目前啟用的角色是：`Lele`、`Lele_Pro`、`Sesame`、`真人男`、`阿甘`。
+目前啟用的角色是：`Lele`、`Lele_Pro`、`Sesame`、`真人男`、`阿甘`、`Hitomi`。
 
 新增角色時，必須同步修改 `local_tts/common.py` 的角色設定，並確認 GPT 權重、SoVITS 權重、參考音訊與 prompt 文字都存在。
+
+`Hitomi` 使用以下本機私有資產，必須自行複製到 `local_tts/assets/`，不可提交：
+
+```text
+local_tts/assets/GPT_weights_v2Pro/Hitomi-e15.ckpt
+local_tts/assets/SoVITS_weights_v2Pro/Hitomi_e8_s424.pth
+local_tts/assets/Data/Hitomi/今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。.wav
+```
 
 Windows D 槽在 WSL 中通常使用 `/mnt/d/`，例如：
 
@@ -133,6 +152,12 @@ WebUI 推理頁會從所選 SoVITS 權重推斷 `v2Pro`/`v2ProPlus` 等模型版
 
 ```bash
 ./local_tts/start_api.sh --role 真人男
+```
+
+Hitomi 的預設參考音訊與文字已固定在 `local_tts/common.py`，啟動時可改用：
+
+```bash
+./local_tts/start_api.sh --role Hitomi
 ```
 
 預設 API 位址是 `http://127.0.0.1:9880`。如果模型已由 API 載入，批次處理可以避免重新切換模型：

@@ -1,6 +1,7 @@
 --no-binary=opencc
 numpy<2.0
 scipy
+soundfile
 tensorboard
 librosa==0.10.2
 numba
@@ -9,7 +10,9 @@ gradio<5
 ffmpeg-python
 onnxruntime==1.23.2
 tqdm
-funasr>=1.3.7
+funasr==1.2.6
+pytorch-wpe==0.0.1
+editdistance==0.8.1
 cn2an
 pypinyin
 pyopenjtalk>=0.4.1

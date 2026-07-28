@@ -48,6 +48,13 @@ ROLE_PROFILES = {
         prompt_text="因为我的朋友跟我说，他这里还是显示只有互关的朋友才能评论。",
         speed_factor=0.9,
     ),
+    "Hitomi": RoleProfile(
+        gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "Hitomi-e15.ckpt",
+        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "Hitomi_e8_s424.pth",
+        ref_audio_path=DATA_ROOT / "Hitomi" / "今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。.wav",
+        prompt_text="今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。",
+        speed_factor=1.0,
+    ),
     "真人男": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "真人男-e15.ckpt",
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "真人男_e8_s112.pth",

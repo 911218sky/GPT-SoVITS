@@ -376,7 +376,7 @@ def change_tts_inference(bert_path, cnhubert_base_path, gpu_number, gpt_path, so
         )
 
 
-from tools.asr.config import asr_dict
+from tools.asr.config import asr_dict, asr_model_aliases
 
 process_name_asr = i18n("语音识别")
 
@@ -387,12 +387,17 @@ def open_asr(asr_inp_dir, asr_opt_dir, asr_model, asr_model_size, asr_lang, asr_
         asr_inp_dir = my_utils.clean_path(asr_inp_dir)
         asr_opt_dir = my_utils.clean_path(asr_opt_dir)
         check_for_existance([asr_inp_dir])
-        cmd = f'"{python_exec}" -s tools/asr/{asr_dict[asr_model]["path"]}'
+        asr_model = asr_model_aliases.get(asr_model, asr_model)
+        model_config = asr_dict[asr_model]
+        cmd = f'"{python_exec}" -s tools/asr/{model_config["path"]}'
         cmd += f' -i "{asr_inp_dir}"'
         cmd += f' -o "{asr_opt_dir}"'
         cmd += f" -s {asr_model_size}"
         cmd += f" -l {asr_lang}"
         cmd += f" -p {asr_precision}"
+        backend = model_config.get("backend")
+        if backend:
+            cmd += f" --backend {backend}"
         output_file_name = os.path.basename(asr_inp_dir)
         output_folder = asr_opt_dir or "output/asr_opt"
         output_file_path = os.path.abspath(f"{output_folder}/{output_file_name}.list")
@@ -1435,7 +1440,7 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
                                 label=i18n("ASR 模型"),
                                 choices=list(asr_dict.keys()),
                                 interactive=True,
-                                value="达摩 ASR (中文)",
+                                value="达摩 ASR (中文经典)",
                             )
                             asr_size = gr.Dropdown(
                                 label=i18n("ASR 模型尺寸"), choices=["large"], interactive=True, value="large"

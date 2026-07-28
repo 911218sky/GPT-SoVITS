@@ -1,9 +1,32 @@
 # -*- coding:utf-8 -*-
 
 import argparse
+import importlib
 import os
 import traceback
 
+
+def ensure_torchaudio() -> None:
+    import torch
+
+    original_cuda_version = torch.version.cuda
+    try:
+        if original_cuda_version == "13.2":
+            torch.version.cuda = "13.0"
+        torchaudio_module = importlib.import_module("torchaudio")
+    except (ModuleNotFoundError, OSError, RuntimeError):
+        from torchaudio_compat import install
+
+        install()
+    else:
+        from torchaudio_compat import patch
+
+        patch(torchaudio_module)
+    finally:
+        torch.version.cuda = original_cuda_version
+
+
+ensure_torchaudio()
 from funasr import AutoModel
 from modelscope import snapshot_download
 from tqdm import tqdm
@@ -115,6 +138,7 @@ def create_model(language="zh", **kwargs):
             vad_model_revision=vad_model_revision,
             punc_model=path_punc,
             punc_model_revision=punc_model_revision,
+            disable_update=True,
         )
         print(f"FunASR 模型加载完成: {language.upper()}")
 
@@ -122,14 +146,19 @@ def create_model(language="zh", **kwargs):
         return model
 
 
-def execute_asr(input_folder, output_folder, model_size, language, backend="fun-asr-nano"):
+def execute_asr(input_folder, output_folder, model_size, language, backend=None):
     input_file_names = os.listdir(input_folder)
     input_file_names.sort()
 
     output = []
     output_file_name = os.path.basename(input_folder)
 
-    model = create_model(language, backend=backend)
+    selected_backend = backend
+    if selected_backend is None:
+        use_paraformer = model_size == "large" and language in ("zh", "yue")
+        selected_backend = "paraformer" if use_paraformer else "fun-asr-nano"
+
+    model = create_model(language, backend=selected_backend)
 
     for file_name in tqdm(input_file_names):
         try:
@@ -163,10 +192,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "-p", "--precision", type=str, default="float16", choices=["float16", "float32"], help="fp16 or fp32"
     )  # 还没接入
+    parser.add_argument(
+        "--backend",
+        type=str,
+        choices=["fun-asr-nano", "sensevoice", "paraformer"],
+        default=None,
+        help="FunASR 後端；未指定時由模型尺寸與語言決定。",
+    )
     cmd = parser.parse_args()
     execute_asr(
         input_folder=cmd.input_folder,
         output_folder=cmd.output_folder,
         model_size=cmd.model_size,
         language=cmd.language,
+        backend=cmd.backend,
     )

@@ -15,6 +15,14 @@ cd /home/sky/code/GPT-SoVITS
 - `SoVITS_weights_v2Pro/*.pth`
 - `Data/<角色>/*.wav`
 
+已設定的角色包括 `Lele`、`Lele_Pro`、`阿甘`、`Sesame`、`真人男` 與 `Hitomi`。`Hitomi` 需要以下本機私有資產，不會提交到 Git：
+
+```text
+local_tts/assets/GPT_weights_v2Pro/Hitomi-e15.ckpt
+local_tts/assets/SoVITS_weights_v2Pro/Hitomi_e8_s424.pth
+local_tts/assets/Data/Hitomi/今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。.wav
+```
+
 音訊清理與合併需要 FFmpeg；WSL/Ubuntu 可執行：
 
 ```bash
@@ -31,6 +39,12 @@ API 預設監聽 `http://127.0.0.1:9880`，啟動完成後會自動切換到角�
 
 ```bash
 ./local_tts/start_api.sh --no-set-model
+```
+
+啟動 Hitomi：
+
+```bash
+./local_tts/start_api.sh --role Hitomi
 ```
 
 ## 呼叫 API
@@ -55,6 +69,15 @@ curl -X POST http://127.0.0.1:9880/tts \
 ./local_tts/batch_tts.sh \
   --file-path /path/to/input.txt \
   --role 真人男
+```
+
+使用 Hitomi 批次輸出：
+
+```bash
+./local_tts/batch_tts.sh \
+  --file-path /path/to/input.txt \
+  --role Hitomi \
+  --output-dir local_tts/output/Hitomi
 ```
 
 若 API 啟動時已指定同一個角色，可加上 `--no-set-model` 避免每批次重新載入權重。
