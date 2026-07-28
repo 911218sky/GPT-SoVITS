@@ -137,12 +137,12 @@ pretrained_gpt_path = "GPT_SoVITS/pretrained_models/s1bert25hz-2kh-longer-epoch=
 exp_root = "logs"
 python_exec = sys.executable or "python"
 
-webui_port_main = 9874
-webui_port_uvr5 = 9873
-webui_port_infer_tts = 9872
-webui_port_subfix = 9871
+webui_port_main = int(os.environ.get("GPT_SOVITS_WEBUI_PORT", "9874"))
+webui_port_uvr5 = int(os.environ.get("GPT_SOVITS_WEBUI_PORT_UVR5", "9873"))
+webui_port_infer_tts = int(os.environ.get("GPT_SOVITS_WEBUI_PORT_INFER_TTS", "9872"))
+webui_port_subfix = int(os.environ.get("GPT_SOVITS_WEBUI_PORT_SUBFIX", "9871"))
 
-api_port = 9880
+api_port = int(os.environ.get("GPT_SOVITS_API_PORT", "9880"))
 
 
 # Thanks to the contribution of @Karasukaigan and @XXXXRT666
