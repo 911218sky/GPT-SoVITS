@@ -75,16 +75,22 @@ class Predictor:
     def __init__(self, args):
         import onnxruntime as ort
 
-        logger.info(ort.get_available_providers())
+        available_providers = ort.get_available_providers()
+        logger.info(available_providers)
         self.args = args
         self.model_ = get_models(device=cpu, dim_f=args.dim_f, dim_t=args.dim_t, n_fft=args.n_fft)
-        self.model = ort.InferenceSession(
-            os.path.join(args.onnx, self.model_.target_name + ".onnx"),
-            providers=[
+        providers = [
+            provider
+            for provider in (
                 "CUDAExecutionProvider",
                 "DmlExecutionProvider",
                 "CPUExecutionProvider",
-            ],
+            )
+            if provider in available_providers
+        ]
+        self.model = ort.InferenceSession(
+            os.path.join(args.onnx, self.model_.target_name + ".onnx"),
+            providers=providers,
         )
         logger.info("ONNX load done")
 

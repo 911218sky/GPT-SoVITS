@@ -48,6 +48,7 @@ sudo apt install -y ffmpeg
 cd /home/sky/code/GPT-SoVITS
 uv venv --allow-existing --python 3.10 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
+.venv/bin/python -m nltk.downloader -d "$HOME/nltk_data" averaged_perceptron_tagger_eng
 ./local_tts/setup_uv.sh
 ```
 
@@ -56,6 +57,8 @@ uv pip install --python .venv/bin/python -r requirements.txt
 WebUI 目前固定使用 `fastapi==0.115.6` 與 `starlette==0.41.3`，搭配已安裝的 Gradio 4.x。若更新依賴後出現 `TypeError: unhashable type: 'dict'` 或 `TypeError: argument of type 'bool' is not iterable`，先重新同步根目錄 `.venv`，並用 `./local_tts/start_web.sh` 啟動，不要直接使用 `local_tts/.venv/bin/python webui.py`。
 
 目前 GPU 環境使用 `torch==2.12.1+cu132` 與 `torchvision==0.27.1+cu132`。PyTorch 2.12.1 沒有相同版本的 `torchaudio` wheel，因此核心讀音檔與重採樣改由 `audio_compat.py` 使用 `soundfile` 與 `scipy` 完成；不要重新安裝舊版 `torchaudio`。
+
+`requirements.txt` 固定使用 `onnxruntime==1.23.2` 的 CPU 版本。`onnxruntime-gpu==1.23.2` 需要 CUDA 12 的 `libcublas.so.12` 等動態庫，與本環境的 CUDA 13.2 不相容；GPT-SoVITS 的 Torch 推理仍使用 GPU，G2PW 與 UVR5 的 ONNX 推理改用 CPU。
 
 ## 模型資產配置
 
@@ -203,6 +206,8 @@ curl -X POST http://127.0.0.1:9880/tts \
 - Fun-ASR-Nano 使用 `qwen3` 架構，請使用 `requirements.txt` 指定的 Transformers 版本；若看到 `KeyError: 'qwen3'`，先重新同步根目錄 `.venv`。
 - `torch.cat(): expected a non-empty list of Tensors`：通常是英文或空白文字被標成 `ZH`；重新執行格式化，並檢查 `.list` 的語言欄位與文字是否正確。
 - `找不到 6-name2semantic-0.tsv`：先檢查前一個 1A/1B 步驟是否非零退出，再確認 `預訓練 SoVITS-G 模型` 路徑存在；不要只重跑最後一個步驟。
+- `Failed to load libcublasLt.so.12`、`libcudart.so.12`：不要另外安裝 CUDA 12 或舊版 Torch；重新執行 `uv pip install --python .venv/bin/python -r requirements.txt`，確認使用 CPU 版 `onnxruntime==1.23.2`。
+- `Resource averaged_perceptron_tagger_eng not found`：執行 `.venv/bin/python -m nltk.downloader -d "$HOME/nltk_data" averaged_perceptron_tagger_eng`；中文參考文字與目標文字請在介面選 `中文` 或 `auto`，不要誤選 `English`。
 - `Input type Half and bias type float`：代表以 CPU/非半精度模式讀取了 GPU 產生的半精度 HuBERT 特徵；目前語意抽取會自動轉成 `float32`。
 
 ## AI 修改規範

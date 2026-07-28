@@ -20,7 +20,8 @@ from .utils import load_config
 
 onnxruntime.set_default_logger_severity(3)
 try:
-    onnxruntime.preload_dlls()
+    if "CUDAExecutionProvider" in onnxruntime.get_available_providers():
+        onnxruntime.preload_dlls()
 except Exception:
     pass
 warnings.filterwarnings("ignore")
