@@ -96,6 +96,24 @@ http://127.0.0.1:9874
 
 訓練流程在 WebUI 內依序完成：資料標註/檢查、SSL 特徵提取、語音切分與 SoVITS/GPT 訓練。訓練輸出通常在 `logs/`。不要把訓練輸出直接當成 `local_tts/assets/`，完成訓練後再依角色設定複製或指定對應權重。
 
+本專案目前預設使用 `v2` 訓練版本，因為本機已配置：
+
+```text
+GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt
+GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth
+```
+
+在 WebUI 的「預訓練模型路徑」中，`預訓練 GPT 模型`、`預訓練 SoVITS-G 模型` 與左側的訓練版本必須相互對應。不要選 `v1`、`v2Pro` 或 `v2ProPlus` 後仍保留 v2 的模型路徑。
+
+訓練集格式化一鍵流程的建議順序：
+
+1. 準備 `音檔|說話者|語言|文字` 格式的 `.list` 檔。
+2. 確認音檔已完成切分，且 `GPT_SoVITS/pretrained_models/chinese-hubert-base` 存在。
+3. 使用 `v2`，依序執行文本/BERT、SSL、語意 Token 三個步驟。
+4. 確認 `logs/<實驗名>/2-name2text.txt`、`4-cnhubert/`、`6-name2semantic.tsv` 都已產生，再開始訓練。
+
+純英文標註即使被 ASR 誤標為 `ZH`，格式化腳本也會自動改走英文 G2P；混合中文句子仍應標記為 `ZH`。
+
 停止服務使用 `Ctrl+C`。
 
 ## 啟動 API 與批次轉語音
@@ -176,8 +194,11 @@ curl -X POST http://127.0.0.1:9880/tts \
 - 模型找不到：檢查 `local_tts/assets/` 的檔名、角色名稱與路徑大小寫。
 - API 無法連線：確認 `9880` 沒有被其他程序占用，並先啟動 `start_api.sh`。
 - WebUI 無法連線：確認 `9874` 沒有被占用；WSL 通常使用 `http://localhost:9874` 或 `http://127.0.0.1:9874`。
-- UVR5 人聲分離是主 WebUI 的選用子服務；它失敗不代表 GPT/SoVITS 訓練或 TTS API 失敗。
+- UVR5 人聲分離與音頻標註是主 WebUI 的選用子服務；任一子服務失敗不代表 GPT/SoVITS 訓練或 TTS API 失敗。
 - Fun-ASR-Nano 使用 `qwen3` 架構，請使用 `requirements.txt` 指定的 Transformers 版本；若看到 `KeyError: 'qwen3'`，先重新同步根目錄 `.venv`。
+- `torch.cat(): expected a non-empty list of Tensors`：通常是英文或空白文字被標成 `ZH`；重新執行格式化，並檢查 `.list` 的語言欄位與文字是否正確。
+- `找不到 6-name2semantic-0.tsv`：先檢查前一個 1A/1B 步驟是否非零退出，再確認 `預訓練 SoVITS-G 模型` 路徑存在；不要只重跑最後一個步驟。
+- `Input type Half and bias type float`：代表以 CPU/非半精度模式讀取了 GPU 產生的半精度 HuBERT 特徵；目前語意抽取會自動轉成 `float32`。
 
 ## AI 修改規範
 
@@ -192,6 +213,7 @@ curl -X POST http://127.0.0.1:9880/tts \
 ## 最小驗證
 
 ```bash
+.venv/bin/python -m py_compile webui.py GPT_SoVITS/prepare_datasets/1-get-text.py GPT_SoVITS/prepare_datasets/3-get-semantic.py tools/subfix_webui.py
 local_tts/.venv/bin/python -m compileall -q local_tts tools/uvr5/webui.py
 git diff --check
 ```

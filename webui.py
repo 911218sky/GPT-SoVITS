@@ -1,7 +1,7 @@
 import os
 import sys
 
-os.environ["version"] = version = "v2Pro"
+os.environ["version"] = version = "v2"
 now_dir = os.getcwd()
 sys.path.insert(0, now_dir)
 import warnings
@@ -1043,6 +1043,16 @@ ps1abc = []
 process_name_1abc = i18n("训练集格式化一键三连")
 
 
+def wait_for_dataset_processes(processes, stage):
+    failures = []
+    for process in processes:
+        return_code = process.wait()
+        if return_code != 0:
+            failures.append(f"pid={process.pid}, returncode={return_code}")
+    if failures:
+        raise RuntimeError(f"{stage} 失敗：{'; '.join(failures)}")
+
+
 def open1abc(
     version,
     inp_text,
@@ -1064,6 +1074,11 @@ def open1abc(
     if ps1abc == []:
         opt_dir = "%s/%s" % (exp_root, exp_name)
         try:
+            if not os.path.isfile(pretrained_s2G_path):
+                raise FileNotFoundError(
+                    f"找不到預訓練 SoVITS-G 模型：{pretrained_s2G_path}。"
+                    "請選擇已有模型的版本，或先下載對應預訓練模型。"
+                )
             #############################1a
             path_text = "%s/2-name2text.txt" % opt_dir
             if os.path.exists(path_text) == False or (
@@ -1098,8 +1113,7 @@ def open1abc(
                     {"__type__": "update", "visible": False},
                     {"__type__": "update", "visible": True},
                 )
-                for p in ps1abc:
-                    p.wait()
+                wait_for_dataset_processes(ps1abc, "1A 文本分詞與 BERT 特徵")
 
                 opt = []
                 for i_part in range(all_parts):  # txt_path="%s/2-name2text-%s.txt"%(opt_dir,i_part)
@@ -1145,8 +1159,7 @@ def open1abc(
                 {"__type__": "update", "visible": False},
                 {"__type__": "update", "visible": True},
             )
-            for p in ps1abc:
-                p.wait()
+            wait_for_dataset_processes(ps1abc, "1B SSL 特徵")
             ps1abc = []
             if "Pro" in version:
                 for i_part in range(all_parts):
@@ -1162,8 +1175,7 @@ def open1abc(
                     print(cmd)
                     p = Popen(cmd, shell=True)
                     ps1abc.append(p)
-                for p in ps1abc:
-                    p.wait()
+                wait_for_dataset_processes(ps1abc, "1B speaker 特徵")
                 ps1abc = []
             yield (
                 i18n("进度") + ": 1A-Done, 1B-Done",
@@ -1207,8 +1219,7 @@ def open1abc(
                     {"__type__": "update", "visible": False},
                     {"__type__": "update", "visible": True},
                 )
-                for p in ps1abc:
-                    p.wait()
+                wait_for_dataset_processes(ps1abc, "1C 語意 Token")
 
                 opt = ["item_name\tsemantic_audio"]
                 for i_part in range(all_parts):

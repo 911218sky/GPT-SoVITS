@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 
 inp_text = os.environ.get("inp_text")
 inp_wav_dir = os.environ.get("inp_wav_dir")
@@ -32,6 +33,14 @@ from tools.my_utils import clean_path
 
 from time import time as ttime
 import shutil
+
+
+def normalize_language(text, language):
+    """Use English G2P for Latin-only ASR labels marked as Chinese."""
+    if language == "zh" and not re.search(r"[\u3400-\u9fff]", text):
+        if re.search(r"[A-Za-z0-9]", text):
+            return "en"
+    return language
 
 
 def my_save(fea, path):  #####fix issue: torch.save doesn't support chinese path
@@ -89,7 +98,11 @@ if os.path.exists(txt_path) == False:
                 name = clean_path(name)
                 name = os.path.basename(name)
                 print(name)
-                phones, word2ph, norm_text = clean_text(text.replace("%", "-").replace("￥", ","), lan, version)
+                normalized_text = text.replace("%", "-").replace("￥", ",").strip()
+                lan = normalize_language(normalized_text, lan)
+                phones, word2ph, norm_text = clean_text(normalized_text, lan, version)
+                if not phones:
+                    raise ValueError(f"無法從標註產生音素：language={lan!r}, text={text!r}")
                 path_bert = "%s/%s.pt" % (bert_dir, name)
                 if os.path.exists(path_bert) == False and lan == "zh":
                     bert_feature = get_bert_feature(norm_text, word2ph)

@@ -153,6 +153,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.nltk_data/
 env/
 venv/
 ENV/

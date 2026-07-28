@@ -357,6 +357,7 @@ if __name__ == "__main__":
                 batchsize_slider,
             ],
             outputs=[*g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
         btn_submit_change.click(
@@ -365,6 +366,7 @@ if __name__ == "__main__":
                 *g_text_list,
             ],
             outputs=[index_slider, *g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
         btn_previous_index.click(
@@ -374,6 +376,7 @@ if __name__ == "__main__":
                 batchsize_slider,
             ],
             outputs=[index_slider, *g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
         btn_next_index.click(
@@ -383,29 +386,38 @@ if __name__ == "__main__":
                 batchsize_slider,
             ],
             outputs=[index_slider, *g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
         btn_delete_audio.click(
             b_delete_audio,
             inputs=[*g_checkbox_list],
             outputs=[index_slider, *g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
         btn_merge_audio.click(
             b_merge_audio,
             inputs=[interval_slider, *g_checkbox_list],
             outputs=[index_slider, *g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
         btn_audio_split.click(
             b_audio_split,
             inputs=[splitpoint_slider, *g_checkbox_list],
             outputs=[index_slider, *g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
-        btn_invert_selection.click(b_invert_selection, inputs=[*g_checkbox_list], outputs=[*g_checkbox_list])
+        btn_invert_selection.click(
+            b_invert_selection,
+            inputs=[*g_checkbox_list],
+            outputs=[*g_checkbox_list],
+            show_api=False,
+        )
 
-        btn_save_json.click(b_save_file)
+        btn_save_json.click(b_save_file, show_api=False)
 
         demo.load(
             b_change_index,
@@ -414,10 +426,11 @@ if __name__ == "__main__":
                 batchsize_slider,
             ],
             outputs=[*g_text_list, *g_audio_list, *g_checkbox_list],
+            show_api=False,
         )
 
     demo.launch(
-        server_name="0.0.0.0",
+        server_name=os.environ.get("GPT_SOVITS_SUBFIX_HOST", "127.0.0.1"),
         inbrowser=True,
         # quiet=True,
         share=eval(args.is_share),
