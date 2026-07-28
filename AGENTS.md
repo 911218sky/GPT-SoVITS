@@ -215,7 +215,7 @@ RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是�
   --output-dir local_tts/output/merged
 ```
 
-合併工具只處理 `0.mp3`、`1.mp3`、`2.mp3` 這類數字檔名，避免把已產生的合併檔再次納入。可用 `--suffix wav` 處理 WAV。
+合併工具只處理 `0.mp3`、`1.mp3`、`2.mp3` 這類數字檔名，避免把已產生的合併檔再次納入。可用 `--suffix wav` 處理 WAV。用 `--max-size-mb 500` 設定每個合併檔最多 500 MB；預設是 1024 MB。
 
 ## HTTP API 範例
 

@@ -8,8 +8,10 @@ import subprocess
 import uuid
 from concurrent.futures import Future
 from pathlib import Path
+from typing import Final
 
 NUMBERED_STEM = re.compile(r"^(\d+)$")
+BYTES_PER_MEGABYTE: Final = 1024 * 1024
 
 
 def get_sorted_audio_files(folder: Path, suffix: str) -> list[Path]:
@@ -128,11 +130,22 @@ def merge_audios(
 
 
 def parse_args() -> argparse.Namespace:
+    def positive_megabytes(value: str) -> int:
+        megabytes = int(value)
+        if megabytes <= 0:
+            raise argparse.ArgumentTypeError("必須是大於 0 的整數 MB")
+        return megabytes
+
     parser = argparse.ArgumentParser(description="依編號合併多個音訊檔")
     parser.add_argument("--input-folder", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--output-name", default="tts_powerful_output.mp3")
-    parser.add_argument("--max-size", type=int, default=1 * 1024 * 1024 * 1024)
+    parser.add_argument(
+        "--max-size-mb",
+        type=positive_megabytes,
+        default=1024,
+        help="每個合併檔的來源音檔總大小上限，單位為 MB（預設：1024）",
+    )
     parser.add_argument("--suffix", default="mp3")
     parser.add_argument("--workers", type=int, default=None)
     return parser.parse_args()
@@ -145,7 +158,7 @@ def main() -> int:
         input_folder=args.input_folder,
         output_dir=args.output_dir,
         output_file_name=args.output_name,
-        max_total_size=args.max_size,
+        max_total_size=args.max_size_mb * BYTES_PER_MEGABYTE,
         audio_suffix=args.suffix,
         max_workers=args.workers,
     )

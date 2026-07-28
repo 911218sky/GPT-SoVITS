@@ -129,7 +129,14 @@ curl -X POST http://127.0.0.1:9880/tts \
   --output-dir local_tts/output/merged
 ```
 
-可用 `--suffix wav` 合併 WAV，或用 `--max-size` 限制每個輸出分片的來源總大小。
+可用 `--suffix wav` 合併 WAV。用 `--max-size-mb` 限制每個輸出分片的來源總大小，單位為 MB，預設是 `1024`：
+
+```bash
+./local_tts/merge_audio.sh \
+  --input-folder local_tts/output/GPT_真人男_小說_clean \
+  --output-dir local_tts/output/merged \
+  --max-size-mb 500
+```
 
 ## 啟動 WebUI
 
