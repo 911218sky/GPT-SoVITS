@@ -103,20 +103,29 @@ http://127.0.0.1:9874
 
 訓練流程在 WebUI 內依序完成：資料標註/檢查、SSL 特徵提取、語音切分與 SoVITS/GPT 訓練。訓練輸出通常在 `logs/`。不要把訓練輸出直接當成 `local_tts/assets/`，完成訓練後再依角色設定複製或指定對應權重。
 
-本專案目前預設使用 `v2` 訓練版本，因為本機已配置：
+目前 `GPT_SoVITS/configs/tts_infer.yaml` 的 `custom` 推理設定載入已重訓完成的台灣女生 `v2Pro` 權重：
+
+```text
+GPT_weights_v2Pro/台灣女生-e15.ckpt
+SoVITS_weights_v2Pro/台灣女生_e12_s576.pth
+```
+
+台灣女生訓練資料來源在 `/home/sky/code/GPT-SoVITS-DATA/台灣女生/`；不要刪除 `raw/` 原始音檔與 `我要騎車，這個這是我的車.wav` 參考音檔。若重新格式化資料，先確認 `.list` 不含 `hello` 這類 ASR 誤標或空白/英文被標成中文的資料。
+
+本機也保留 `v2` 基礎模型作為 fallback：
 
 ```text
 GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt
 GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth
 ```
 
-在 WebUI 的「預訓練模型路徑」中，`預訓練 GPT 模型`、`預訓練 SoVITS-G 模型` 與左側的訓練版本必須相互對應。不要選 `v1`、`v2Pro` 或 `v2ProPlus` 後仍保留 v2 的模型路徑。
+在 WebUI 的「預訓練模型路徑」中，`預訓練 GPT 模型`、`預訓練 SoVITS-G 模型` 與左側的訓練版本必須相互對應。訓練 `v2Pro` 時必須使用 `GPT_SoVITS/pretrained_models/s1v3.ckpt`、`GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth`、`GPT_SoVITS/pretrained_models/v2Pro/s2Dv2Pro.pth`，不要留空或混用 v2 的 `s2G2333k.pth`。
 
 訓練集格式化一鍵流程的建議順序：
 
 1. 準備 `音檔|說話者|語言|文字` 格式的 `.list` 檔。
 2. 確認音檔已完成切分，且 `GPT_SoVITS/pretrained_models/chinese-hubert-base` 存在。
-3. 使用 `v2`，依序執行文本/BERT、SSL、語意 Token 三個步驟。
+3. 使用與模型一致的版本，依序執行文本/BERT、SSL、語意 Token 三個步驟；`v2Pro` 還會產生 `7-sv_cn/` speaker 特徵。
 4. 確認 `logs/<實驗名>/2-name2text.txt`、`4-cnhubert/`、`6-name2semantic.tsv` 都已產生，再開始訓練。
 
 純英文標註即使被 ASR 誤標為 `ZH`，格式化腳本也會自動改走英文 G2P；混合中文句子仍應標記為 `ZH`。
