@@ -214,9 +214,10 @@ with gr.Blocks(title="UVR5 WebUI", analytics_enabled=False) as app:
                     ],
                     [vc_output4],
                     api_name="uvr_convert",
+                    show_api=False,
                 )
 app.queue().launch(  # concurrency_count=511, max_size=1022
-    server_name="0.0.0.0",
+    server_name=os.environ.get("GPT_SOVITS_UVR5_HOST", "127.0.0.1"),
     inbrowser=True,
     share=is_share,
     server_port=webui_port_uvr5,

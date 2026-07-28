@@ -1973,7 +1973,7 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
             gr.Markdown(value=i18n("施工中，请静候佳音"))
 
     app.queue().launch(  # concurrency_count=511, max_size=1022
-        server_name="0.0.0.0",
+        server_name=os.environ.get("GPT_SOVITS_WEBUI_HOST", "0.0.0.0"),
         inbrowser=True,
         share=is_share,
         server_port=webui_port_main,
