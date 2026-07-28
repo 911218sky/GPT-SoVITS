@@ -70,7 +70,9 @@ local_tts/assets/SoVITS_weights_v2Pro/<角色>_e8_s*.pth
 local_tts/assets/Data/<角色>/*.wav
 ```
 
-目前啟用的角色是：`Lele`、`Lele_Pro`、`Sesame`、`真人男`、`阿甘`。新增角色時，必須同步修改 `local_tts/common.py` 的角色設定，並確認 GPT 權重、SoVITS 權重、參考音訊與 prompt 文字都存在。
+目前啟用的角色是：`Lele`、`Lele_Pro`、`Sesame`、`真人男`、`阿甘`、`台灣女生`。台灣女生使用 `local_tts/assets/GPT_weights_v2Pro/台灣女生-e15.ckpt`、`local_tts/assets/SoVITS_weights_v2Pro/台灣女生_e12_s576.pth`，以及 `local_tts/assets/Data/台灣女生/我要騎車，這個這是我的車.wav`。若資料不在預設位置，可用 `GPT_SOVITS_TAIWAN_GIRL_MODEL_ROOT` 與 `GPT_SOVITS_TAIWAN_GIRL_DATA_ROOT` 覆蓋。
+
+新增角色時，必須同步修改 `local_tts/common.py` 的角色設定，並確認 GPT 權重、SoVITS 權重、參考音訊與 prompt 文字都存在。
 
 Windows D 槽在 WSL 中通常使用 `/mnt/d/`，例如：
 
