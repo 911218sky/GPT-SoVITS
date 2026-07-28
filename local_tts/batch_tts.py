@@ -58,10 +58,14 @@ def filter_text(text: str) -> str:
     )
 
     def num_to_chinese(match: re.Match[str]) -> str:
-        number = int(match.group())
+        numeric_text = match.group()
+        digits = "零一二三四五六七八九"
+        if len(numeric_text) > 9:
+            return "".join(digits[int(digit)] for digit in numeric_text)
+
+        number = int(numeric_text)
         if number == 0:
             return "零"
-        digits = "零一二三四五六七八九"
         units = ["", "十", "百", "千", "萬", "十萬", "百萬", "千萬", "億"]
         result = ""
         position = 0
