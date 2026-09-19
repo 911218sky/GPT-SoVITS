@@ -50,7 +50,7 @@ ROLE_PROFILES = {
     ),
     "Hitomi": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "Hitomi-e15.ckpt",
-        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "Hitomi_e8_s424.pth",
+        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "Hitomi_e8_s224.pth",
         ref_audio_path=DATA_ROOT / "Hitomi" / "今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。.wav",
         prompt_text="今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。",
         speed_factor=1.0,
@@ -60,7 +60,7 @@ ROLE_PROFILES = {
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "真人男_e8_s112.pth",
         ref_audio_path=DATA_ROOT / "真人男" / "还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。.wav",
         prompt_text="还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。",
-        speed_factor=0.9,
+        speed_factor=1.0,
     ),
 }
 

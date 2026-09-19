@@ -8,7 +8,7 @@
 - `api_v2.py`：GPT-SoVITS HTTP API 入口。
 - `config.py`：推理、WebUI、API 埠號與模型設定。
 - `tools/uvr5/webui.py`：UVR5 人聲分離子 WebUI。
-- `local_tts/`：本機 API/WebUI 啟動器、批次 TXT 轉語音、音訊清理與合併工具。
+- `local_tts/`：本機 API/WebUI 啟動器、批次 TXT 轉語音、音訊清理、語速調整與合併工具。
 - `GPT_SoVITS/pretrained_models/`：訓練與推理需要的基礎預訓練模型。
 - `logs/`：GPT-SoVITS 訓練實驗輸出。
 
@@ -31,7 +31,7 @@ GitHub 普通 Git 儲存庫不適合存放數百 MB 到數 GB 的模型。模型
 - Python 3.10
 - `uv`
 - GPU 推理/訓練時使用相容的 NVIDIA 驅動與 CUDA
-- `ffmpeg`（音訊清理、轉檔與合併需要）
+- `ffmpeg`（音訊清理、語速調整、轉檔與合併需要）
 
 安裝基本工具：
 
@@ -89,7 +89,7 @@ local_tts/assets/Data/<角色>/*.wav
 
 ```text
 local_tts/assets/GPT_weights_v2Pro/Hitomi-e15.ckpt
-local_tts/assets/SoVITS_weights_v2Pro/Hitomi_e8_s424.pth
+local_tts/assets/SoVITS_weights_v2Pro/Hitomi_e8_s224.pth
 local_tts/assets/Data/Hitomi/今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。.wav
 ```
 
@@ -185,7 +185,7 @@ local_tts/output/GPT_<角色>_<TXT檔名>/
 
 每段語音先輸出為 WAV；可以用 `--output-dir` 指定其他位置。
 
-RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是：`--max-text-length 1800`、`--split-method cut5`、`--batch-size 40`、`--split-bucket`、`--parallel-infer`、`--top-k 15`。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時依序降到 `--batch-size 24`、`16`、`12`。
+RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是：`--max-text-length 2400`、`--split-method cut5`、`--batch-size 56`、`--split-bucket`、`--parallel-infer`、`--top-k 15`。`真人男` 預設 `speed_factor=1.0`，以保留 bucket；語速若要變慢，合併前用 `./local_tts/tempo_audio.sh --tempo 0.9`。文本 BERT 特徵改為批次抽取（預設每批 64 句，可用環境變數 `GPT_SOVITS_BERT_BATCH_SIZE` 調整），並留在 GPU 上避免每句 CPU 來回拷貝。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時依序降到 `--batch-size 48`、`40`、`24`。
 
 測試批次流程可使用原創樣本：
 
@@ -197,7 +197,7 @@ RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是�
   --output-dir local_tts/output/test_novel_3060ti
 ```
 
-## 音訊清理與合併
+## 音訊清理、語速與合併
 
 去除短靜音、長靜音並轉成 MP3：
 
@@ -207,15 +207,25 @@ RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是�
   --output local_tts/output/GPT_真人男_new_text_clean
 ```
 
+合併前批次調整每個編號片段語速（音高不變；`真人男` 推理預設 `speed_factor=1.0`，語速改在這步調）：
+
+```bash
+./local_tts/tempo_audio.sh \
+  --input local_tts/output/GPT_真人男_new_text_clean \
+  --output local_tts/output/GPT_真人男_new_text_tempo \
+  --tempo 0.9 \
+  --suffix mp3
+```
+
 合併編號音檔：
 
 ```bash
 ./local_tts/merge_audio.sh \
-  --input-folder local_tts/output/GPT_真人男_new_text_clean \
+  --input-folder local_tts/output/GPT_真人男_new_text_tempo \
   --output-dir local_tts/output/merged
 ```
 
-合併工具只處理 `0.mp3`、`1.mp3`、`2.mp3` 這類數字檔名，避免把已產生的合併檔再次納入。可用 `--suffix wav` 處理 WAV。用 `--max-size-mb 500` 設定每個合併檔最多 500 MB；預設是 1024 MB。
+合併與語速工具預設只處理 `0.mp3`、`1.mp3`、`2.mp3` 這類數字檔名，避免把已產生的合併檔再次納入。可用 `--suffix wav` 處理 WAV。用 `--max-size-mb 500` 設定每個合併檔最多 500 MB；預設是 1024 MB。
 
 ## HTTP API 範例
 
