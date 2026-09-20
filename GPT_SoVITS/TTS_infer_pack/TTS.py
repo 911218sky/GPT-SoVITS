@@ -482,6 +482,8 @@ class TTS:
 
         self.stop_flag: bool = False
         self.precision: torch.dtype = torch.float16 if self.configs.is_half else torch.float32
+        # 長篇批次計次：搭配 GPT_SOVITS_EMPTY_CACHE 定期回收 CUDA 碎片，避免吃到共享顯存。
+        self._infer_count: int = 0
 
     def _init_models(
         self,
@@ -1670,10 +1672,21 @@ class TTS:
             self.init_vits_weights(self.configs.vits_weights_path)
             raise e
         finally:
-            # 每請求 empty_cache 會強制 CUDA sync，長篇批次明顯變慢。
-            # 預設略過；若長跑 OOM 可設 GPT_SOVITS_EMPTY_CACHE=1 恢復舊行為。
-            if os.environ.get("GPT_SOVITS_EMPTY_CACHE", "0") == "1":
+            # empty_cache 會 CUDA sync，每請求都做會變慢；完全不做則長跑碎片累積、吃到共享顯存。
+            # GPT_SOVITS_EMPTY_CACHE：0=從不，1=每請求，N=每 N 次請求（預設 64，偏速度）。
+            self._infer_count += 1
+            every = self._empty_cache_every()
+            if every > 0 and self._infer_count % every == 0:
                 self.empty_cache()
+
+    @staticmethod
+    def _empty_cache_every() -> int:
+        raw = os.environ.get("GPT_SOVITS_EMPTY_CACHE", "64").strip()
+        try:
+            value = int(raw)
+        except ValueError:
+            value = 64 if raw.lower() in {"", "true", "yes"} else 0
+        return max(0, value)
 
     def empty_cache(self):
         try:
