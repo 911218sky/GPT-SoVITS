@@ -1673,7 +1673,7 @@ class TTS:
             raise e
         finally:
             # empty_cache 會 CUDA sync，每請求都做會變慢；完全不做則長跑碎片累積、吃到共享顯存。
-            # GPT_SOVITS_EMPTY_CACHE：0=從不，1=每請求，N=每 N 次請求（預設 64，偏速度）。
+            # GPT_SOVITS_EMPTY_CACHE：0=從不，1=每請求，N=每 N 次請求（預設 16）。
             self._infer_count += 1
             every = self._empty_cache_every()
             if every > 0 and self._infer_count % every == 0:
@@ -1681,11 +1681,11 @@ class TTS:
 
     @staticmethod
     def _empty_cache_every() -> int:
-        raw = os.environ.get("GPT_SOVITS_EMPTY_CACHE", "64").strip()
+        raw = os.environ.get("GPT_SOVITS_EMPTY_CACHE", "16").strip()
         try:
             value = int(raw)
         except ValueError:
-            value = 64 if raw.lower() in {"", "true", "yes"} else 0
+            value = 16 if raw.lower() in {"", "true", "yes"} else 0
         return max(0, value)
 
     def empty_cache(self):
