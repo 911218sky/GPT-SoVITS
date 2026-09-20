@@ -11,10 +11,5 @@ if [[ ! -x "$ENV_DIR/bin/python" ]]; then
 fi
 
 export PYTHONPATH="$ENV_DIR/lib/python3.10/site-packages:$PROJECT_ROOT:$SCRIPT_DIR:$PROJECT_ROOT/.venv/lib/python3.10/site-packages${PYTHONPATH:+:$PYTHONPATH}"
-export NLTK_DATA="$PROJECT_ROOT/.nltk_data:$HOME/nltk_data${NLTK_DATA:+:$NLTK_DATA}"
-# 長篇批次：關閉每請求 empty_cache 與 T2S tqdm，減少 CUDA sync / 終端 I/O。
-# 若長跑 OOM：GPT_SOVITS_EMPTY_CACHE=1 ./local_tts/start_api.sh ...
-export GPT_SOVITS_EMPTY_CACHE="${GPT_SOVITS_EMPTY_CACHE:-0}"
-export TQDM_DISABLE="${TQDM_DISABLE:-1}"
 cd "$PROJECT_ROOT"
-exec uv run --no-project --python "$ENV_DIR/bin/python" -m local_tts.start_api "$@"
+exec uv run --no-project --python "$ENV_DIR/bin/python" -m local_tts.profile_tts "$@"

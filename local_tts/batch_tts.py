@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import re
+import time
 from pathlib import Path
 from typing import TypedDict
 
@@ -17,13 +18,37 @@ LOGGER = logging.getLogger(__name__)
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:9880"
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_MAX_TEXT_LENGTH = 2400
-DEFAULT_BATCH_SIZE = 56
+# 3060 Ti 8GB 掃速結果（2026-09）：bs=64 + len=1200 約比舊 bs=56/len=2400 快 ~30%
+DEFAULT_MAX_TEXT_LENGTH = 1200
+DEFAULT_BATCH_SIZE = 64
 DEFAULT_BATCH_THRESHOLD = 0.75
-DEFAULT_FRAGMENT_INTERVAL = 0.05
+DEFAULT_FRAGMENT_INTERVAL = 0.01
 DEFAULT_REPETITION_PENALTY = 1.35
 DEFAULT_SPLIT_METHOD = "cut5"
 DEFAULT_TOP_K = 15
+# 本機最快組 + 微優化（skip empty_cache / TQDM_DISABLE / SV cache）確認平均約 328 字/秒
+DEFAULT_CHARS_PER_SEC = 328.0
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(round(seconds)))
+    hours, rem = divmod(seconds, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}小時{minutes}分{secs}秒"
+    if minutes:
+        return f"{minutes}分{secs}秒"
+    return f"{secs}秒"
+
+
+def estimate_chars_per_sec(chunk_chars: list[int], chunk_seconds: list[float], fallback: float) -> float:
+    if not chunk_seconds or not chunk_chars:
+        return fallback
+    total_chars = sum(chunk_chars)
+    total_sec = sum(chunk_seconds)
+    if total_sec <= 0 or total_chars <= 0:
+        return fallback
+    return total_chars / total_sec
 
 
 class TTSRequestPayload(TypedDict):
@@ -187,6 +212,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--media-type", choices=["wav", "ogg", "aac"], default="wav")
     parser.add_argument("--set-model", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--chars-per-sec",
+        type=float,
+        default=DEFAULT_CHARS_PER_SEC,
+        help="預估吞吐（字/秒），用於開跑時顯示整本 ETA；跑起來後會用實測值更新",
+    )
     return parser.parse_args()
 
 
@@ -203,24 +234,92 @@ def main() -> int:
     text = input_path.read_text(encoding="utf-8", errors="ignore").replace("\n", "").replace(" ", "")
     chunks = split_text(text, args.max_text_length)
     extension = args.media_type
+    total_chars = len(text)
+    pending_indices = [
+        index
+        for index, _chunk in enumerate(chunks)
+        if not (output_dir / f"{index}.{extension}").exists()
+    ]
+    pending_chars = sum(len(chunks[index]) for index in pending_indices)
+    rate = args.chars_per_sec if args.chars_per_sec > 0 else DEFAULT_CHARS_PER_SEC
+    eta0 = pending_chars / rate if rate > 0 else 0.0
     LOGGER.info(
-        "批次參數：chunks=%d, max_text_length=%d, split_method=%s, batch_size=%d, split_bucket=%s, parallel_infer=%s",
+        "批次參數：chunks=%d, pending=%d, max_text_length=%d, split_method=%s, "
+        "batch_size=%d, split_bucket=%s, parallel_infer=%s",
         len(chunks),
+        len(pending_indices),
         args.max_text_length,
         args.split_method,
         args.batch_size,
         args.split_bucket,
         args.parallel_infer,
     )
+    LOGGER.info(
+        "小說規模：總字數≈%d，待轉換≈%d 字 / %d 段；依 %.0f 字/秒預估約需 %s",
+        total_chars,
+        pending_chars,
+        len(pending_indices),
+        rate,
+        format_duration(eta0),
+    )
+    chunk_seconds: list[float] = []
+    chunk_chars_done: list[int] = []
+    skipped = 0
+    done_chars = 0
+    wall_started = time.perf_counter()
     for index, chunk in enumerate(tqdm(chunks, desc=str(output_dir))):
         output_path = output_dir / f"{index}.{extension}"
         if output_path.exists():
+            skipped += 1
             continue
         payload = build_payload(profile, chunk, args)
         if not payload["text"]:
             LOGGER.warning("第 %d 段過濾後為空，跳過", index)
             continue
+        started = time.perf_counter()
         output_path.write_bytes(request_audio(args.server_url.rstrip("/"), payload, args.max_retries))
+        elapsed = time.perf_counter() - started
+        chars = len(payload["text"])
+        chunk_seconds.append(elapsed)
+        chunk_chars_done.append(chars)
+        done_chars += chars
+        live_rate = estimate_chars_per_sec(chunk_chars_done, chunk_seconds, rate)
+        remain_chars = max(0, pending_chars - done_chars)
+        remain_eta = remain_chars / live_rate if live_rate > 0 else 0.0
+        elapsed_wall = time.perf_counter() - wall_started
+        LOGGER.info(
+            "chunk=%d chars=%d client_wall=%.3fs (chars/s=%.1f) | "
+            "進度 %d/%d 段，實測≈%.0f 字/秒，已用 %s，預估剩餘 %s",
+            index,
+            chars,
+            elapsed,
+            chars / elapsed if elapsed > 0 else 0.0,
+            len(chunk_seconds),
+            len(pending_indices),
+            live_rate,
+            format_duration(elapsed_wall),
+            format_duration(remain_eta),
+        )
+    if chunk_seconds:
+        total = sum(chunk_seconds)
+        final_rate = estimate_chars_per_sec(chunk_chars_done, chunk_seconds, rate)
+        LOGGER.info(
+            "client_summary: done=%d skipped=%d total=%.3fs avg=%.3fs min=%.3fs max=%.3fs | "
+            "整本實測≈%.0f 字/秒，總耗時 %s",
+            len(chunk_seconds),
+            skipped,
+            total,
+            total / len(chunk_seconds),
+            min(chunk_seconds),
+            max(chunk_seconds),
+            final_rate,
+            format_duration(time.perf_counter() - wall_started),
+        )
+        LOGGER.info(
+            "server stage breakdown is in API logs / GPT_SOVITS_TIMING_LOG ([TTS_TIMING] lines)"
+        )
+    elif skipped:
+        LOGGER.info("全部區段已存在，已跳過 %d 段，無需轉換", skipped)
     LOGGER.info("完成：%s", output_dir)
     return 0
 

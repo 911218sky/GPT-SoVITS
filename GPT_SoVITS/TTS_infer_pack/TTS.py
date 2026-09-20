@@ -5,6 +5,7 @@ import random
 import sys
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 
 from tqdm import tqdm
@@ -38,6 +39,22 @@ from TTS_infer_pack.TextPreprocessor import TextPreprocessor
 from sv import SV
 
 resample_transform_dict = {}
+
+
+def emit_tts_timing(message: str) -> None:
+    """Print and optionally append timing lines for offline bench analysis."""
+    print(message, flush=True)
+    log_path = os.environ.get("GPT_SOVITS_TIMING_LOG", "").strip()
+    if not log_path:
+        return
+    try:
+        parent = os.path.dirname(log_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+    except OSError:
+        pass
 
 
 def resample(audio_tensor, sr0, sr1, device):
@@ -460,6 +477,7 @@ class TTS:
             "bert_features": None,
             "norm_text": None,
             "aux_ref_audio_paths": [],
+            "sv_embs": None,
         }
 
         self.stop_flag: bool = False
@@ -768,6 +786,7 @@ class TTS:
             self.prompt_cache["refer_spec"] = [spec_audio]
         else:
             self.prompt_cache["refer_spec"][0] = spec_audio
+        self.prompt_cache["sv_embs"] = None
 
     def _get_ref_spec(self, ref_audio_path):
         raw_audio, raw_sr = load_audio(ref_audio_path)
@@ -1142,6 +1161,7 @@ class TTS:
         if not (len(list(paths)) == len(aux_ref_audio_paths) == len(self.prompt_cache["aux_ref_audio_paths"])):
             self.prompt_cache["aux_ref_audio_paths"] = aux_ref_audio_paths
             self.prompt_cache["refer_spec"] = [self.prompt_cache["refer_spec"][0]]
+            self.prompt_cache["sv_embs"] = None
             for path in aux_ref_audio_paths:
                 if path in [None, ""]:
                     continue
@@ -1168,7 +1188,62 @@ class TTS:
         ###### text preprocessing ########
         t1 = time.perf_counter()
         data: list = None
-        if not (return_fragment or streaming_mode):
+        pipeline_prefetch = bool(inputs.get("pipeline_prefetch", False))
+        if pipeline_prefetch and (return_fragment or streaming_mode):
+            print(i18n("pipeline_prefetch 不支援分段/流式模式，已自動關閉"))
+            pipeline_prefetch = False
+
+        if not (return_fragment or streaming_mode) and pipeline_prefetch:
+            # Lazy BERT per sentence-group; prefetch next group while current group runs T2S/VITS.
+            print(i18n("文本预取流水线已开启"))
+            texts = self.text_preprocessor.pre_seg_text(text, text_lang, text_split_method)
+            if len(texts) == 0:
+                yield 16000, np.zeros(int(16000), dtype=np.int16)
+                return
+            text_groups = [texts[i : i + batch_size] for i in range(0, len(texts), batch_size)]
+            prompt_data = self.prompt_cache if not no_prompt_text else None
+
+            def make_group_batches(batch_texts: list):
+                batch_data = []
+                for piece in batch_texts:
+                    phones, bert_features, norm_text = self.text_preprocessor.segment_and_extract_feature_for_text(
+                        piece, text_lang, self.configs.version
+                    )
+                    if phones is None:
+                        continue
+                    batch_data.append(
+                        {
+                            "phones": phones,
+                            "bert_features": bert_features,
+                            "norm_text": norm_text,
+                        }
+                    )
+                if not batch_data:
+                    return [], []
+                return self.to_batch(
+                    batch_data,
+                    prompt_data=prompt_data,
+                    batch_size=batch_size,
+                    threshold=batch_threshold,
+                    split_bucket=split_bucket,
+                    device=self.configs.device,
+                    precision=self.precision,
+                )
+
+            def iter_prefetched_items():
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(make_group_batches, text_groups[0])
+                    for group_index, _group in enumerate(text_groups):
+                        group_batches, group_index_list = future.result()
+                        if group_index + 1 < len(text_groups):
+                            future = pool.submit(make_group_batches, text_groups[group_index + 1])
+                        if not group_batches:
+                            continue
+                        yield group_batches, group_index_list
+
+            data = ("__prefetch__", iter_prefetched_items())
+            batch_index_list = None
+        elif not (return_fragment or streaming_mode):
             data = self.text_preprocessor.preprocess(text, text_lang, text_split_method, self.configs.version)
             if len(data) == 0:
                 yield 16000, np.zeros(int(16000), dtype=np.int16)
@@ -1227,10 +1302,44 @@ class TTS:
             ###### inference ######
             t_34 = 0.0
             t_45 = 0.0
+            t_bucket_prep = 0.0
             audio = []
             is_first_package = True
             output_sr = self.configs.sampling_rate if not self.configs.use_vocoder else self.vocoder_configs["sr"]
-            for item in data:
+            prefetch_mode = isinstance(data, tuple) and bool(data) and data[0] == "__prefetch__"
+            split_bucket_post = False if prefetch_mode else split_bucket
+            ordered_fragments: list = []
+            group_audio = None
+            group_index_list_cur = None
+
+            def _iter_work_items():
+                if prefetch_mode:
+                    for group_batches, group_index_list in data[1]:
+                        yield ("group_start", group_index_list)
+                        for group_item in group_batches:
+                            yield ("item", group_item)
+                        yield ("group_end", None)
+                else:
+                    for normal_item in data:
+                        yield ("item", normal_item)
+
+            for work_kind, work_payload in _iter_work_items():
+                if work_kind == "group_start":
+                    group_audio = []
+                    group_index_list_cur = work_payload
+                    continue
+                if work_kind == "group_end":
+                    if group_audio is None:
+                        continue
+                    if split_bucket and group_index_list_cur is not None:
+                        ordered_fragments.extend(self.recovery_order(group_audio, group_index_list_cur))
+                    else:
+                        ordered_fragments.extend(sum(group_audio, []))
+                    group_audio = None
+                    group_index_list_cur = None
+                    continue
+
+                item = work_payload
                 t3 = time.perf_counter()
                 if return_fragment or streaming_mode:
                     item = make_batch(item)
@@ -1244,7 +1353,7 @@ class TTS:
                 all_phoneme_lens: torch.LongTensor = item["all_phones_len"]
                 all_bert_features: torch.LongTensor = item["all_bert_features"]
                 norm_text: str = item["norm_text"]
-                max_len = item["max_len"]
+                max_len: int = item["max_len"]
 
                 print(i18n("前端处理后的文本(每句):"), norm_text)
                 if no_prompt_text:
@@ -1255,13 +1364,24 @@ class TTS:
                     )
 
                 refer_audio_spec = []
-                
-                sv_emb = [] if self.is_v2pro else None
-                for spec, audio_tensor in self.prompt_cache["refer_spec"]:
-                    spec = spec.to(dtype=self.precision, device=self.configs.device)
-                    refer_audio_spec.append(spec)
+                sv_emb = None
+                cached_sv = self.prompt_cache.get("sv_embs")
+                if self.is_v2pro and cached_sv is not None and len(cached_sv) == len(self.prompt_cache["refer_spec"]):
+                    for spec, _audio_tensor in self.prompt_cache["refer_spec"]:
+                        refer_audio_spec.append(spec.to(dtype=self.precision, device=self.configs.device))
+                    sv_emb = cached_sv
+                else:
+                    sv_emb = [] if self.is_v2pro else None
+                    for spec, audio_tensor in self.prompt_cache["refer_spec"]:
+                        spec = spec.to(dtype=self.precision, device=self.configs.device)
+                        refer_audio_spec.append(spec)
+                        if self.is_v2pro:
+                            sv_emb.append(self.sv_model.compute_embedding3(audio_tensor))
                     if self.is_v2pro:
-                        sv_emb.append(self.sv_model.compute_embedding3(audio_tensor))
+                        self.prompt_cache["sv_embs"] = sv_emb
+
+                t_before_t2s = time.perf_counter()
+                t_bucket_prep += t_before_t2s - t3
 
                 if not streaming_mode:
                     print(f"############ {i18n('预测语义Token')} ############")
@@ -1279,7 +1399,7 @@ class TTS:
                         repetition_penalty=repetition_penalty,
                     )
                     t4 = time.perf_counter()
-                    t_34 += t4 - t3
+                    t_34 += t4 - t_before_t2s
 
 
                     batch_audio_fragment = []
@@ -1373,7 +1493,7 @@ class TTS:
                         chunk_split_thershold=chunk_split_thershold,
                     )
                     t4 = time.perf_counter()
-                    t_34 += t4 - t3
+                    t_34 += t4 - t_before_t2s
                     phones = batch_phones[0].unsqueeze(0).to(self.configs.device)
                     is_first_chunk = True
 
@@ -1480,7 +1600,11 @@ class TTS:
                 t5 = time.perf_counter()
                 t_45 += t5 - t4
                 if return_fragment:
-                    print("%.3f\t%.3f\t%.3f\t%.3f" % (t1 - t0, t2 - t1, t4 - t3, t5 - t4))
+                    emit_tts_timing(
+                        f"[TTS_TIMING] bucket ref={t1 - t0:.3f}s text={t2 - t1:.3f}s "
+                        f"bucket_prep={t_before_t2s - t3:.3f}s t2s={t4 - t_before_t2s:.3f}s "
+                        f"vits={t5 - t4:.3f}s"
+                    )
                     yield self.audio_postprocess(
                         [batch_audio_fragment],
                         output_sr,
@@ -1490,28 +1614,48 @@ class TTS:
                         fragment_interval,
                         super_sampling if self.configs.use_vocoder and self.configs.version == "v3" else False,
                     )
-                elif streaming_mode:...
+                elif streaming_mode:
+                    pass
                 else:
-                    audio.append(batch_audio_fragment)
+                    if group_audio is not None:
+                        group_audio.append(batch_audio_fragment)
+                    else:
+                        audio.append(batch_audio_fragment)
 
                 if self.stop_flag:
                     yield output_sr, np.zeros(int(output_sr), dtype=np.int16)
                     return
 
+            if prefetch_mode:
+                audio = [ordered_fragments]
+                batch_index_list = None
+
             if not (return_fragment or streaming_mode):
-                print("%.3f\t%.3f\t%.3f\t%.3f" % (t1 - t0, t2 - t1, t_34, t_45))
-                if len(audio) == 0:
+                if len(audio) == 0 or (prefetch_mode and len(ordered_fragments) == 0):
+                    emit_tts_timing(
+                        f"[TTS_TIMING] ref={t1 - t0:.3f}s text={t2 - t1:.3f}s "
+                        f"bucket_prep={t_bucket_prep:.3f}s t2s={t_34:.3f}s vits={t_45:.3f}s "
+                        f"post=0.000s total={time.perf_counter() - t0:.3f}s prefetch={int(prefetch_mode)}"
+                    )
                     yield output_sr, np.zeros(int(output_sr), dtype=np.int16)
                     return
-                yield self.audio_postprocess(
+                t_post0 = time.perf_counter()
+                processed = self.audio_postprocess(
                     audio,
                     output_sr,
                     batch_index_list,
                     speed_factor,
-                    split_bucket,
+                    split_bucket_post,
                     fragment_interval,
                     super_sampling if self.configs.use_vocoder and self.configs.version == "v3" else False,
                 )
+                t_post1 = time.perf_counter()
+                emit_tts_timing(
+                    f"[TTS_TIMING] ref={t1 - t0:.3f}s text={t2 - t1:.3f}s "
+                    f"bucket_prep={t_bucket_prep:.3f}s t2s={t_34:.3f}s vits={t_45:.3f}s "
+                    f"post={t_post1 - t_post0:.3f}s total={t_post1 - t0:.3f}s prefetch={int(prefetch_mode)}"
+                )
+                yield processed
 
         except Exception as e:
             traceback.print_exc()
@@ -1526,7 +1670,10 @@ class TTS:
             self.init_vits_weights(self.configs.vits_weights_path)
             raise e
         finally:
-            self.empty_cache()
+            # 每請求 empty_cache 會強制 CUDA sync，長篇批次明顯變慢。
+            # 預設略過；若長跑 OOM 可設 GPT_SOVITS_EMPTY_CACHE=1 恢復舊行為。
+            if os.environ.get("GPT_SOVITS_EMPTY_CACHE", "0") == "1":
+                self.empty_cache()
 
     def empty_cache(self):
         try:

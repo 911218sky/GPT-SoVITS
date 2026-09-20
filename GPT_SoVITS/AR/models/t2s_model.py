@@ -1,6 +1,7 @@
 # modified from https://github.com/yangdongchao/SoundStorm/blob/master/soundstorm/s1/AR/models/t2s_model.py
 # reference: https://github.com/lifeiteng/vall-e
 import math
+import os
 from typing import List, Optional
 
 import torch
@@ -180,19 +181,30 @@ class T2SBlock:
         v_cache: torch.Tensor,
         attn_mask: torch.Tensor = None,
         torch_sdpa: bool = True,
+        cur_len: int = -1,
     ):
         q, k, v = F.linear(x, self.qkv_w, self.qkv_b).chunk(3, dim=-1)
 
-        k_cache = torch.cat([k_cache, k], dim=1)
-        v_cache = torch.cat([v_cache, v], dim=1)
+        if cur_len >= 0:
+            # 寫入預留容量，避免逐步 torch.cat 造成反覆配置
+            k_cache[:, cur_len : cur_len + 1, :] = k
+            v_cache[:, cur_len : cur_len + 1, :] = v
+            kv_len = cur_len + 1
+            k_used = k_cache[:, :kv_len, :]
+            v_used = v_cache[:, :kv_len, :]
+        else:
+            k_cache = torch.cat([k_cache, k], dim=1)
+            v_cache = torch.cat([v_cache, v], dim=1)
+            k_used = k_cache
+            v_used = v_cache
+            kv_len = k_cache.shape[1]
 
         batch_size = q.shape[0]
         q_len = q.shape[1]
-        kv_len = k_cache.shape[1]
 
         q = q.view(batch_size, q_len, self.num_heads, -1).transpose(1, 2)
-        k = k_cache.view(batch_size, kv_len, self.num_heads, -1).transpose(1, 2)
-        v = v_cache.view(batch_size, kv_len, self.num_heads, -1).transpose(1, 2)
+        k = k_used.view(batch_size, kv_len, self.num_heads, -1).transpose(1, 2)
+        v = v_used.view(batch_size, kv_len, self.num_heads, -1).transpose(1, 2)
 
         if torch_sdpa:
             attn = F.scaled_dot_product_attention(q, k, v, (~attn_mask) if attn_mask is not None else None)
@@ -249,10 +261,11 @@ class T2STransformer:
         v_cache: List[torch.Tensor],
         attn_mask: torch.Tensor = None,
         torch_sdpa: bool = True,
+        cur_len: int = -1,
     ):
         for i in range(self.num_blocks):
             x, k_cache[i], v_cache[i] = self.blocks[i].decode_next_token(
-                x, k_cache[i], v_cache[i], attn_mask, torch_sdpa
+                x, k_cache[i], v_cache[i], attn_mask, torch_sdpa, cur_len
             )
         return x, k_cache, v_cache
 
@@ -698,7 +711,8 @@ class Text2SemanticDecoder(nn.Module):
         y_list = [None] * y.shape[0]
         batch_idx_map = list(range(y.shape[0]))
         idx_list = [None] * y.shape[0]
-        for idx in tqdm(range(1500)):
+        quiet = os.environ.get("TQDM_DISABLE", "") in {"1", "true", "True"}
+        for idx in tqdm(range(1500), disable=quiet):
             if idx == 0:
                 xy_dec, k_cache, v_cache = self.t2s_transformer.process_prompt(xy_pos, attn_mask, None)
             else:
@@ -747,7 +761,8 @@ class Text2SemanticDecoder(nn.Module):
                         v_cache[i] = torch.index_select(v_cache[i], dim=0, index=reserved_idx_of_batch_for_y)
 
             if (early_stop_num != -1 and (y.shape[1] - prefix_len) > early_stop_num) or idx == 1499:
-                print("use early stop num:", early_stop_num)
+                if not quiet:
+                    print("use early stop num:", early_stop_num)
                 stop = True
                 for i, batch_index in enumerate(batch_idx_map):
                     batch_index = batch_idx_map[i]
@@ -760,8 +775,10 @@ class Text2SemanticDecoder(nn.Module):
             if stop:
                 if y.shape[1] == 0:
                     y = torch.concat([y, torch.zeros_like(samples)], dim=1)
-                    print("bad zero prediction")
-                print(f"T2S Decoding EOS [{prefix_len} -> {y.shape[1]}]")
+                    if not quiet:
+                        print("bad zero prediction")
+                if not quiet:
+                    print(f"T2S Decoding EOS [{prefix_len} -> {y.shape[1]}]")
                 break
 
             ####################### update next step ###################################

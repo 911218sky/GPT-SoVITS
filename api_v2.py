@@ -176,6 +176,7 @@ class TTS_Request(BaseModel):
     super_sampling: bool = False
     overlap_length: int = 2
     min_chunk_length: int = 16
+    pipeline_prefetch: bool = False
 
 
 def pack_ogg(io_buffer: BytesIO, data: np.ndarray, rate: int):

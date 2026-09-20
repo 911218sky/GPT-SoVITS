@@ -4,6 +4,10 @@
 
 [`../../GPT-SoVITS-操作指南.md`](../../GPT-SoVITS-操作指南.md)
 
+換機掃速、最優化想法與本機改動清單：
+
+[`效能優化指南.md`](./效能優化指南.md)
+
 以下指令都以 WSL/Linux 的專案根目錄 `/home/sky/code/GPT-SoVITS` 為例。Windows 的 `D:\` 磁碟在 WSL 通常對應 `/mnt/d/`。
 
 `local_tts` 不修改 GPT-SoVITS 上游的 `api_v2.py`、`webui.py`，只提供固定路徑、角色模型與 uv 啟動入口。
@@ -112,7 +116,15 @@ curl -X POST http://127.0.0.1:9880/tts \
 
 ### RTX 3060 Ti 長篇小說建議
 
-`batch_tts.sh` 預設使用每次約 `2400` 字、`cut5` 句子切分、`batch_size=56`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`。`真人男` 預設 `speed_factor=1.0`（非 1.0 會關閉 bucket）。文本 BERT 特徵會批次抽取（預設 64 句/批，環境變數 `GPT_SOVITS_BERT_BATCH_SIZE` 可改）。不要同時開多個 `batch_tts.sh` 搶同一張 GPU；速度主要靠 API 內部批次，而不是多個 HTTP 請求併發。
+`batch_tts.sh` 預設（本機掃速最快組）：每次約 `1200` 字、`cut5`、`batch_size=64`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`、`fragment_interval=0.01`。相對舊預設（2400 字 / batch 56）約快 **30%**。
+
+**怎麼丟 API 最快：**
+1. **只開一個 API、一次只打一個 `/tts` 請求**（做完立刻打下一段）。不要並行多請求，8GB 會搶顯存變慢或 OOM。
+2. **每段約 1200 字 + `batch_size=64`**：讓單次請求內塞滿句批次，又不要把整段拉太長拖垮顯存。
+3. 保持 `split_bucket=True`、`parallel_infer=True`、`speed_factor=1.0`（非 1.0 會關 bucket）。
+4. 清音／調速可邊轉邊做（CPU）；不要為此再開第二條 TTS。
+
+`真人男` 預設 `speed_factor=1.0`；語速若要變慢，合併前用 `tempo_audio.sh`。文本 BERT 特徵批次抽取（`GPT_SOVITS_BERT_BATCH_SIZE`，預設 64）。OOM 時依序降 `--batch-size 56`、`48`、`40`。
 
 ```bash
 ./local_tts/start_api.sh --role 真人男
