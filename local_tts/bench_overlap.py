@@ -22,7 +22,7 @@ from .batch_tts import (
     split_text,
 )
 from .common import get_role_profile, require_file
-from .process_audio import remove_silence
+from .finish_audio import remove_silence
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_SERVER_URL = "http://127.0.0.1:9880"

@@ -185,7 +185,7 @@ local_tts/output/GPT_<角色>_<TXT檔名>/
 
 每段語音先輸出為 WAV；可以用 `--output-dir` 指定其他位置。
 
-RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是：`--max-text-length 1200`、`--split-method cut5`、`--batch-size 64`、`--split-bucket`、`--parallel-infer`、`--top-k 15`、`--fragment-interval 0.01`（本機掃速相對舊 2400/56 約快 30%）。`真人男` 預設 `speed_factor=1.0`，以保留 bucket；語速若要變慢，合併前用 `./local_tts/tempo_audio.sh --tempo 0.9`。文本 BERT 特徵改為批次抽取（預設每批 64 句，可用環境變數 `GPT_SOVITS_BERT_BATCH_SIZE` 調整），並留在 GPU 上避免每句 CPU 來回拷貝。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時依序降到 `--batch-size 56`、`48`、`40`。
+RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是：`--max-text-length 1200`、`--split-method cut5`、`--batch-size 64`、`--split-bucket`、`--parallel-infer`、`--top-k 15`、`--fragment-interval 0.01`（本機掃速相對舊 2400/56 約快 30%）。`真人男` 預設 `speed_factor=1.0`，以保留 bucket；語速若要變慢，用 `./local_tts/finish_audio.sh all --tempo 0.9`。文本 BERT 特徵改為批次抽取（預設每批 64 句，可用環境變數 `GPT_SOVITS_BERT_BATCH_SIZE` 調整），並留在 GPU 上避免每句 CPU 來回拷貝。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時依序降到 `--batch-size 56`、`48`、`40`。
 
 測試批次流程可使用原創樣本：
 
@@ -199,33 +199,25 @@ RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是�
 
 ## 音訊清理、語速與合併
 
-去除短靜音、長靜音並轉成 MP3：
+統一用 `finish_audio.sh` / `finish_audio.py`（需 `ffmpeg`）。指令：`all` / `clean` / `tempo` / `merge`。
+
+完整操作與參數表：`local_tts/README.md`「清理、調速與合併」；操作指南第 6 節也有精簡版。
 
 ```bash
-./local_tts/process_audio.sh \
+# 推薦：一條龍（一次編碼＝舊清音兩輪+調速；workers 預設用滿 CPU）
+./local_tts/finish_audio.sh all \
   --input local_tts/output/GPT_真人男_new_text \
-  --output local_tts/output/GPT_真人男_new_text_clean
-```
-
-合併前批次調整每個編號片段語速（音高不變；`真人男` 推理預設 `speed_factor=1.0`，語速改在這步調）：
-
-```bash
-./local_tts/tempo_audio.sh \
-  --input local_tts/output/GPT_真人男_new_text_clean \
-  --output local_tts/output/GPT_真人男_new_text_tempo \
   --tempo 0.9 \
-  --suffix mp3
+  --max-size-mb 1024
+
+# 自訂多輪靜音：--silence-steps "0.5:-30,2.0:-20"
+# 分步：clean / tempo / merge
+./local_tts/finish_audio.sh clean --input ... --output ..._clean
+./local_tts/finish_audio.sh tempo --input ..._clean --output ..._tempo --tempo 0.9 --suffix mp3
+./local_tts/finish_audio.sh merge --input-folder ..._tempo --output-dir ..._merged --suffix mp3
 ```
 
-合併編號音檔：
-
-```bash
-./local_tts/merge_audio.sh \
-  --input-folder local_tts/output/GPT_真人男_new_text_tempo \
-  --output-dir local_tts/output/merged
-```
-
-合併與語速工具預設只處理 `0.mp3`、`1.mp3`、`2.mp3` 這類數字檔名，避免把已產生的合併檔再次納入。可用 `--suffix wav` 處理 WAV。用 `--max-size-mb 500` 設定每個合併檔最多 500 MB；預設是 1024 MB。
+`merge` 只處理 `0.mp3`、`1.mp3`… 編號檔。
 
 ## HTTP API 範例
 

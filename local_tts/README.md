@@ -124,7 +124,7 @@ curl -X POST http://127.0.0.1:9880/tts \
 3. 保持 `split_bucket=True`、`parallel_infer=True`、`speed_factor=1.0`（非 1.0 會關 bucket）。
 4. 清音／調速可邊轉邊做（CPU）；不要為此再開第二條 TTS。
 
-`真人男` 預設 `speed_factor=1.0`；語速若要變慢，合併前用 `tempo_audio.sh`。文本 BERT 特徵批次抽取（`GPT_SOVITS_BERT_BATCH_SIZE`，預設 64）。OOM 時依序降 `--batch-size 56`、`48`、`40`。
+`真人男` 預設 `speed_factor=1.0`；語速若要變慢，用 `finish_audio.sh all --tempo 0.9`（或單獨 `tempo`）。文本 BERT 特徵批次抽取（`GPT_SOVITS_BERT_BATCH_SIZE`，預設 64）。OOM 時依序降 `--batch-size 56`、`48`、`40`。
 
 ```bash
 ./local_tts/start_api.sh --role 真人男
@@ -147,52 +147,149 @@ curl -X POST http://127.0.0.1:9880/tts \
   --output-dir local_tts/output/test_novel_3060ti
 ```
 
-## 清理靜音
+## 清理、調速與合併（`finish_audio.sh`）
 
-需要系統已安裝 `ffmpeg`：
+需要系統已安裝 `ffmpeg`。舊的 `process_audio` / `tempo_audio` / `merge_audio` 已合併成一支腳本與一支 Python：
+
+- 腳本：`local_tts/finish_audio.sh`
+- 實作：`local_tts/finish_audio.py`
 
 ```bash
-./local_tts/process_audio.sh \
-  --input local_tts/output/GPT_真人男_小說 \
-  --output local_tts/output/GPT_真人男_小說_clean
+./local_tts/finish_audio.sh <指令> [參數…]
+./local_tts/finish_audio.sh help
+./local_tts/finish_audio.sh all --help   # 或其他指令
 ```
 
-預設會先以 `0.5` 秒、`-30 dB` 去除短靜音，再以 `2.0` 秒、`-20 dB` 去除長靜音。只執行一個步驟時加上 `--single-step`。
+| 指令 | 做什麼 | 何時用 |
+|------|--------|--------|
+| `all` | **推薦**：清靜音 ± 調速（一次編碼）→ 合併 | 長篇轉完後收尾 |
+| `clean` | 只清靜音（每輪各編碼一次，較慢） | 只要清音、或邊 TTS 邊清 |
+| `tempo` | 只調語速 | 已有 clean MP3，只改語速 |
+| `merge` | 只合併編號音檔 | 已有 prepared/tempo MP3 |
 
-## 合併前調整語速
+### 為什麼 `all` 比較快、效果卻一樣？
 
-`真人男` 預設 `speed_factor=1.0` 以保留 bucket 加速。若要接近以前的 `0.9` 語速（或任意倍數），在清理後、合併前對每個編號片段批次調整：
+以前三步大約是：**清音編碼 2 次 + 調速編碼 1 次 + 合併 copy**。  
+現在 `all`（不要加 `--legacy`）把多輪靜音與調速串成**一條 FFmpeg filter**，每段只 **MP3 編碼 1 次**，再 `-c copy` 合併。預設靜音輪次仍是舊的兩輪，聽感參數對齊。
+
+| 項目 | 舊三步 | `all`（預設） |
+|------|--------|----------------|
+| 每段編碼次數 | ≈ 3 | **1** |
+| 靜音預設 | `0.5s/-30dB` 再 `2.0s/-20dB` | 同左（`--silence-steps`） |
+| 調速 | 另一步 | 同一條 filter 的 `--tempo` |
+| 合併 | copy | copy |
+| 並行 | 約 CPU−2 | **預設用滿全部 CPU**（可不寫 `--workers`） |
+
+### 最常見指令（等同以前：清音兩輪 + 語速 0.9 + 合併 1GB）
 
 ```bash
-./local_tts/tempo_audio.sh \
+cd /home/sky/code/GPT-SoVITS
+./local_tts/finish_audio.sh all \
+  --input "local_tts/output/你的小說_真人男" \
+  --tempo 0.9 \
+  --max-size-mb 1024
+```
+
+- 中繼：`<input>_prepared/`（編號 MP3）
+- 成品：`<input>_merged/`（如 `1_tts_powerful_output.mp3`…）
+- 已存在的檔會跳過，可中斷續跑。
+- 不調速就省略 `--tempo`（預設 `1.0`）。
+
+### `all` 參數一覽
+
+| 參數 | 預設 | 說明 |
+|------|------|------|
+| `--input` | 必填 | `batch_tts` 編號 WAV 目錄 |
+| `--output-dir` | `<input>_merged` | 合併成品目錄 |
+| `--work-dir` | `<input>_prepared` | 中繼 MP3 目錄 |
+| `--tempo` | `1.0` | 語速；`0.9`=變慢、`1.1`=變快（音高不變） |
+| `--silence-steps` | `0.5:-30,2.0:-20` | 多輪靜音 list（見下） |
+| `--max-size-mb` | `1024` | 每個合併分片的來源總大小上限（MB） |
+| `--output-name` | `tts_powerful_output.mp3` | 合併檔名 |
+| `--workers` | **全部 CPU** | 並行 FFmpeg 數；通常不用手動指定 |
+| `--quality` | `4` | MP3 品質 0–9（數字越大越快、檔越小） |
+| `--volume-boost` | `1.0` | 音量倍率 |
+| `--legacy` | 關 | 走舊三步（每輪各編碼，較慢，僅除錯） |
+
+### `--silence-steps`（多輪靜音 list）
+
+格式：`秒數:閾值dB`，多輪用逗號（或分號）分隔。
+
+```bash
+# 預設＝舊兩輪（可省略不寫）
+--silence-steps "0.5:-30,2.0:-20"
+
+# 只清一輪
+--silence-steps "0.5:-30"
+
+# 三輪
+--silence-steps "0.3:-35,0.5:-30,2.0:-20"
+```
+
+`all` 會把這些輪次串在同一條 FFmpeg 裡；`clean` 則每輪各編碼一次。
+
+### `clean`（只清靜音）
+
+```bash
+./local_tts/finish_audio.sh clean \
+  --input local_tts/output/GPT_真人男_小說 \
+  --output local_tts/output/GPT_真人男_小說_clean \
+  --silence-steps "0.5:-30,2.0:-20"
+```
+
+支援與 `all` 相同的 `--silence-steps` / `--workers` / `--quality` / `--volume-boost`。輸出為編號 MP3。
+
+### `tempo`（只調語速）
+
+```bash
+./local_tts/finish_audio.sh tempo \
   --input local_tts/output/GPT_真人男_小說_clean \
   --output local_tts/output/GPT_真人男_小說_tempo \
   --tempo 0.9 \
   --suffix mp3
 ```
 
-- `--tempo 0.9`：變慢；`1.1`：變快。使用 FFmpeg `atempo`，音高不變。
-- 預設只處理 `0.mp3`、`1.mp3` 這類編號檔；已存在的輸出會跳過，可中斷續跑。
-- 合併時改吃 `--output` 那個資料夾。
+| 參數 | 說明 |
+|------|------|
+| `--input` / `--output` | 必填 |
+| `--tempo` | 必填，語速倍數 |
+| `--suffix` | 只處理該副檔名（如 `mp3`） |
+| `--all-files` | 不限編號檔名 |
+| `--workers` | 預設用滿 CPU |
+| `--quality` | MP3 品質 0–9 |
 
-## 合併音檔
+預設只處理 `0.mp3`、`1.mp3`…。
 
-`merge_audio.sh` 只會合併檔名為 `0.mp3`、`1.mp3`、`2.mp3` 這類編號音檔，避免把已合併的輸出檔再次納入：
+### `merge`（只合併）
+
+只合併檔名為數字的音檔，避免把已合併輸出再吃進去：
 
 ```bash
-./local_tts/merge_audio.sh \
-  --input-folder local_tts/output/GPT_真人男_小說_tempo \
-  --output-dir local_tts/output/merged
-```
-
-`process_audio.sh` 清理後會輸出 MP3，因此清理後合併時使用 `--suffix mp3`。如果直接合併批次工具產生的 WAV，才改用 `--suffix wav`。用 `--max-size-mb` 限制每個輸出分片的來源總大小，單位為 MB，預設是 `1024`：
-
-```bash
-./local_tts/merge_audio.sh \
-  --input-folder local_tts/output/GPT_真人男_小說_tempo \
-  --output-dir local_tts/output/merged \
+./local_tts/finish_audio.sh merge \
+  --input-folder local_tts/output/GPT_真人男_小說_prepared \
+  --output-dir local_tts/output/GPT_真人男_小說_merged \
+  --suffix mp3 \
   --max-size-mb 1024
 ```
+
+| 參數 | 預設 | 說明 |
+|------|------|------|
+| `--input-folder` / `--input` | 必填 | 編號音檔目錄 |
+| `--output-dir` / `--output` | 必填 | 合併輸出目錄 |
+| `--suffix` | `mp3` | 也可 `wav`（直接併 WAV） |
+| `--max-size-mb` | `1024` | 分片大小上限 MB |
+| `--output-name` | `tts_powerful_output.mp3` | 檔名 |
+| `--workers` | 用滿 CPU（且 ≤ 分片數） | 多分片並行合併 |
+
+### 分步範例（等同舊三支腳本）
+
+```bash
+./local_tts/finish_audio.sh clean  --input ".../小說_真人男" --output ".../小說_真人男_clean"
+./local_tts/finish_audio.sh tempo  --input ".../小說_真人男_clean" --output ".../小說_真人男_tempo" --tempo 0.9 --suffix mp3
+./local_tts/finish_audio.sh merge  --input-folder ".../小說_真人男_tempo" --output-dir ".../小說_真人男_merged" --suffix mp3 --max-size-mb 1024
+```
+
+一般情況直接用上面的 `all` 即可，更快且效果相同。
 
 ## 啟動 WebUI
 
@@ -224,24 +321,12 @@ cd /home/sky/code/GPT-SoVITS
   --output-dir "local_tts/output/罪名不朽_310_真人男"
 ```
 
-清理、調語速、合併：
+清理、調語速、合併（推薦一次做完）：
 
 ```bash
-./local_tts/process_audio.sh \
+./local_tts/finish_audio.sh all \
   --input "local_tts/output/罪名不朽_310_真人男" \
-  --output "local_tts/output/罪名不朽_310_真人男_clean"
-
-# 合併前把每個編號片段調成 0.9 倍語速（可改成其他倍數）
-./local_tts/tempo_audio.sh \
-  --input "local_tts/output/罪名不朽_310_真人男_clean" \
-  --output "local_tts/output/罪名不朽_310_真人男_tempo" \
   --tempo 0.9 \
-  --suffix mp3
-
-./local_tts/merge_audio.sh \
-  --input-folder "local_tts/output/罪名不朽_310_真人男_tempo" \
-  --output-dir "local_tts/output/罪名不朽_310_真人男_merged" \
-  --suffix mp3 \
   --max-size-mb 1024
 ```
 
