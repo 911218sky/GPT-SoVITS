@@ -6,6 +6,10 @@
 全部按英文识别
 全部按日文识别
 """
+from tools.portable_runtime import activate as activate_portable_runtime
+
+activate_portable_runtime(change_cwd=True)
+
 import psutil
 import os
 
@@ -61,13 +65,28 @@ patch_gradio_schema()
 import gradio as gr
 from TTS_infer_pack.text_segmentation_method import get_method
 from TTS_infer_pack.TTS import NO_PROMPT_ERROR, TTS, TTS_Config
+from module.models_v5 import V5_VERSIONS
 
+from tools.acceleration import cuda_graph_available, flash_attention_available
 from tools.assets import css, js, top_html
 from tools.i18n.i18n import I18nAuto, scan_language_list
 
 language = os.environ.get("language", "Auto")
 language = sys.argv[-1] if sys.argv[-1] in scan_language_list() else language
 i18n = I18nAuto(language=language)
+
+# cache-dit (DBCache) for the DiT sampler: off by default. The UI writes here, tts_infer
+# forwards it to TTS_infer_pack; the GSV_DBCACHE* environment variables work too.
+CACHE_DIT = {"cache_dit": "off", "dbcache_fn": None, "dbcache_threshold": 0.02,
+             "dbcache_warmup": 8, "dbcache_downsample": 4}
+
+
+def update_cache_dit(mode, fn, thr, warmup, ds):
+    CACHE_DIT["cache_dit"] = str(mode or "off")
+    CACHE_DIT["dbcache_fn"] = None if fn in (None, "") or int(fn) < 0 else int(fn)
+    CACHE_DIT["dbcache_threshold"] = float(thr) if thr not in (None, "") else 0.02
+    CACHE_DIT["dbcache_warmup"] = int(warmup) if warmup not in (None, "") else 8
+    CACHE_DIT["dbcache_downsample"] = int(ds) if ds not in (None, "") else 4
 
 
 # os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '1'  # 确保直接启动推理UI时也能够设置。
@@ -78,6 +97,10 @@ if torch.cuda.is_available():
 #     device = "mps"
 else:
     device = "cpu"
+
+accel_dtype = torch.float16 if is_half else torch.float32
+graph_available = cuda_graph_available(device)
+flash_attn_supported = flash_attention_available(device, accel_dtype)
 
 # is_half = False
 # device = "cpu"
@@ -118,11 +141,6 @@ from config import change_choices, get_weights_names, name2gpt_path, name2sovits
 
 SoVITS_names, GPT_names = get_weights_names()
 from config import pretrained_sovits_name
-
-path_sovits_v3 = pretrained_sovits_name["v3"]
-path_sovits_v4 = pretrained_sovits_name["v4"]
-is_exist_s2gv3 = os.path.exists(path_sovits_v3)
-is_exist_s2gv4 = os.path.exists(path_sovits_v4)
 
 tts_config = TTS_Config("GPT_SoVITS/configs/tts_infer.yaml")
 tts_config.device = device
@@ -167,11 +185,18 @@ def inference(
     fragment_interval,
     seed,
     keep_random,
-    parallel_infer,
+    use_cuda_graph,
+    use_flash_attention,
     repetition_penalty,
-    sample_steps,
-    super_sampling,
+    sample_steps=None,
+    super_sampling=False,
+    cfg_rate=None,
 ):
+    if sample_steps is None:
+        sample_steps = 4 if tts_pipeline.configs.version == "v5turbo" else 32
+    if cfg_rate is None:
+        cfg_rate = 1.30 if tts_pipeline.configs.version == "v5dev" else 0.0
+    sample_steps, cfg_rate = int(sample_steps), float(cfg_rate)
     seed = -1 if keep_random else seed
     actual_seed = seed if seed not in [-1, "", None] else random.randint(0, 2**32 - 1)
     inputs = {
@@ -191,16 +216,20 @@ def inference(
         "return_fragment": False,
         "fragment_interval": fragment_interval,
         "seed": actual_seed,
-        "parallel_infer": parallel_infer,
+        "parallel_infer": True,
+        "use_cuda_graph": use_cuda_graph,
+        "use_flash_attention": use_flash_attention,
         "repetition_penalty": repetition_penalty,
         "sample_steps": int(sample_steps),
+        "cfg_rate": float(cfg_rate),
         "super_sampling": super_sampling,
     }
+    inputs.update(CACHE_DIT)   # cache-dit (DBCache), off unless the UI / env enables it
     try:
         for item in tts_pipeline.run(inputs):
             yield item, actual_seed
     except NO_PROMPT_ERROR:
-        gr.Warning(i18n("V3不支持无参考文本模式，请填写参考文本！"))
+        gr.Warning(i18n("v3、v4、v5 均不支持无参考文本模式，请填写参考文本！"))
 
 
 def custom_sort_key(s):
@@ -229,7 +258,7 @@ with open("./weight.json", "r", encoding="utf-8") as file:
 
 from process_ckpt import get_sovits_version_from_path_fast
 
-v3v4set = {"v3", "v4"}
+v3v4set = {"v3", "v4"} | V5_VERSIONS
 
 
 def change_sovits_weights(sovits_path, prompt_language=None, text_language=None):
@@ -238,13 +267,16 @@ def change_sovits_weights(sovits_path, prompt_language=None, text_language=None)
     global version, model_version, dict_language, if_lora_v3
     version, model_version, if_lora_v3 = get_sovits_version_from_path_fast(sovits_path)
     # print(sovits_path,version, model_version, if_lora_v3)
-    is_exist = is_exist_s2gv3 if model_version == "v3" else is_exist_s2gv4
-    path_sovits = path_sovits_v3 if model_version == "v3" else path_sovits_v4
+    path_sovits = pretrained_sovits_name[model_version]
+    is_exist = os.path.exists(path_sovits)
     if if_lora_v3 == True and is_exist == False:
         info = path_sovits + "SoVITS %s" % model_version + i18n("底模缺失，无法加载相应 LoRA 权重")
         gr.Warning(info)
         raise FileExistsError(info)
     dict_language = dict_language_v1 if version == "v1" else dict_language_v2
+    prompt_text_update = prompt_language_update = text_update = text_language_update = {"__type__": "update"}
+    visible_sample_steps = model_version in v3v4set
+    visible_inp_refs = not visible_sample_steps
     if prompt_language is not None and text_language is not None:
         if prompt_language in list(dict_language.keys()):
             prompt_text_update, prompt_language_update = (
@@ -272,10 +304,11 @@ def change_sovits_weights(sovits_path, prompt_language=None, text_language=None)
             prompt_language_update,
             text_update,
             text_language_update,
-            {"__type__": "update", "interactive": visible_sample_steps, "value": 32},
+            {"__type__": "update", "interactive": visible_sample_steps, "value": (4 if model_version == "v5turbo" else 32)},
             {"__type__": "update", "visible": visible_inp_refs},
             {"__type__": "update", "interactive": True if model_version not in v3v4set else False},
             {"__type__": "update", "value": i18n("模型加载中，请等待"), "interactive": False},
+            {"__type__": "update", "visible": model_version in V5_VERSIONS, "value": (1.30 if model_version == "v5dev" else 0.0)},
         )
 
     tts_pipeline.init_vits_weights(sovits_path)
@@ -286,10 +319,11 @@ def change_sovits_weights(sovits_path, prompt_language=None, text_language=None)
         prompt_language_update,
         text_update,
         text_language_update,
-        {"__type__": "update", "interactive": visible_sample_steps, "value": 32},
+        {"__type__": "update", "interactive": visible_sample_steps, "value": (4 if model_version == "v5turbo" else 32)},
         {"__type__": "update", "visible": visible_inp_refs},
         {"__type__": "update", "interactive": True if model_version not in v3v4set else False},
         {"__type__": "update", "value": i18n("合成语音"), "interactive": True},
+        {"__type__": "update", "visible": model_version in V5_VERSIONS, "value": (1.30 if model_version == "v5dev" else 0.0)},
     )
     with open("./weight.json") as f:
         data = f.read()
@@ -321,13 +355,13 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
             GPT_dropdown = gr.Dropdown(
                 label=i18n("GPT模型列表"),
                 choices=sorted(GPT_names, key=custom_sort_key),
-                value=gpt_path,
+                value=next((name for name, path in name2gpt_path.items() if path == gpt_path), gpt_path),
                 interactive=True,
             )
             SoVITS_dropdown = gr.Dropdown(
                 label=i18n("SoVITS模型列表"),
                 choices=sorted(SoVITS_names, key=custom_sort_key),
-                value=sovits_path,
+                value=next((name for name, path in name2sovits_path.items() if path == sovits_path), sovits_path),
                 interactive=True,
             )
             refresh_button = gr.Button(i18n("刷新模型路径"), variant="primary")
@@ -346,20 +380,26 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
             prompt_text = gr.Textbox(label=i18n("主参考音频的文本"), value="", lines=2)
             with gr.Row():
                 prompt_language = gr.Dropdown(
-                    label=i18n("主参考音频的语种"), choices=list(dict_language.keys()), value=i18n("中文")
+                    label=i18n("主参考音频的语种"), choices=list(dict_language.keys()), value=i18n("中文"), scale=1
                 )
-                with gr.Column():
-                    ref_text_free = gr.Checkbox(
-                        label=i18n("开启无参考文本模式。不填参考文本亦相当于开启。"),
-                        value=False,
-                        interactive=True if model_version != "v3" else False,
-                        show_label=True,
-                    )
-                    gr.Markdown(
-                        i18n("使用无参考文本模式时建议使用微调的GPT")
-                        + "<br>"
-                        + i18n("听不清参考音频说的啥(不晓得写啥)可以开。开启后无视填写的参考文本。")
-                    )
+                cfg_rate = gr.Slider(
+                    minimum=0, maximum=2, step=0.05,
+                    value=(1.30 if model_version == "v5dev" else 0.0), label="CFG",
+                    visible=model_version in V5_VERSIONS, interactive=True, scale=1,
+                )
+            with gr.Column():
+                ref_text_free = gr.Checkbox(
+                    label=i18n("开启无参考文本模式。不填参考文本亦相当于开启。")
+                    + i18n("v3、v4、v5 均不支持无参考文本模式，请填写参考文本！"),
+                    value=False,
+                    interactive=True if model_version != "v3" else False,
+                    show_label=True,
+                )
+                gr.Markdown(
+                    i18n("使用无参考文本模式时建议使用微调的GPT")
+                    + "<br>"
+                    + i18n("听不清参考音频说的啥(不晓得写啥)可以开。开启后无视填写的参考文本。")
+                )
 
         with gr.Column():
             gr.Markdown(value=i18n("*请填写需要合成的目标文本和语种模式"))
@@ -374,10 +414,11 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
             with gr.Column():
                 with gr.Row():
                     batch_size = gr.Slider(
-                        minimum=1, maximum=200, step=1, label=i18n("batch_size"), value=20, interactive=True
+                        minimum=1, maximum=200, step=1, label=i18n("batch_size"),
+                        value=1 if model_version in V5_VERSIONS else 20, interactive=True
                     )
                     sample_steps = gr.Radio(
-                        label=i18n("采样步数(仅对V3/4生效)"), value=32, choices=[4, 8, 16, 32, 64, 128], visible=True
+                        label="Euler steps (V3/V4/V5)", value=(4 if model_version == "v5turbo" else 32), choices=[4, 8, 16, 32], visible=True
                     )
                 with gr.Row():
                     fragment_interval = gr.Slider(
@@ -396,6 +437,25 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
                     repetition_penalty = gr.Slider(
                         minimum=0, maximum=2, step=0.05, label=i18n("重复惩罚"), value=1.35, interactive=True
                     )
+                with gr.Accordion(i18n("DiT 加速 cache-dit（默认关闭）"), open=False):
+                    with gr.Row():
+                        cache_dit_mode = gr.Dropdown(
+                            label=i18n("cache-dit"), choices=["off", "auto", "f4", "f8", "f16"],
+                            value="off", interactive=True, scale=2,
+                        )
+                        dbcache_fn = gr.Number(label="fn", value=-1, precision=0, scale=1)
+                        dbcache_threshold = gr.Number(label="thr", value=0.02, scale=1)
+                        dbcache_warmup = gr.Number(label="warmup", value=8, precision=0, scale=1)
+                        dbcache_downsample = gr.Number(label="ds", value=4, precision=0, scale=1)
+                    gr.Markdown(i18n("DBCache：只算前 fn 个 block，残差变化小于 thr 时跳过中间 block。"
+                                     "fn=-1 表示跟随模式（auto = 步数>=16 时 F8）。v5turbo 4 步不支持。"))
+                    for _cd in (cache_dit_mode, dbcache_fn, dbcache_threshold,
+                                dbcache_warmup, dbcache_downsample):
+                        _cd.change(
+                            update_cache_dit,
+                            [cache_dit_mode, dbcache_fn, dbcache_threshold,
+                             dbcache_warmup, dbcache_downsample],
+                        )
 
             with gr.Column():
                 with gr.Row():
@@ -418,7 +478,13 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
                     )
 
                 with gr.Row():
-                    parallel_infer = gr.Checkbox(label=i18n("并行推理"), value=True, interactive=True, show_label=True)
+                    use_cuda_graph = gr.Checkbox(
+                        label="CUDA Graph", value=graph_available, visible=graph_available, interactive=graph_available
+                    )
+                    use_flash_attention = gr.Checkbox(
+                        label="flash_attn加速", value=flash_attn_supported, visible=flash_attn_supported,
+                        interactive=flash_attn_supported
+                    )
                     split_bucket = gr.Checkbox(
                         label=i18n("数据分桶(并行推理时会降低一点计算量)"),
                         value=True,
@@ -455,10 +521,12 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
                 fragment_interval,
                 seed,
                 keep_random,
-                parallel_infer,
+                use_cuda_graph,
+                use_flash_attention,
                 repetition_penalty,
                 sample_steps,
                 super_sampling,
+                cfg_rate,
             ],
             [output, seed],
         )
@@ -477,6 +545,7 @@ with gr.Blocks(title="GPT-SoVITS WebUI", analytics_enabled=False, js=js, css=css
                 inp_refs,
                 ref_text_free,
                 inference_button,
+                cfg_rate,
             ],
         )  #
         GPT_dropdown.change(change_gpt_weights, [GPT_dropdown], [])
