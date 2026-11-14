@@ -8,6 +8,8 @@
 
 影片／B 站下載 → 抽聲音 →（可指定目標說話者）→ 訓練資料：見 AI Workflow **Workflow C**。
 
+**轉文字／分說話者預設用 WhisperX**（不再預設 FunASR）；細節見 [AI Workflow](./GPT-SoVITS-AI-Workflow.md) §1。
+
 環境安裝／驗證（uv、權重、UVR、檢查清單）：
 
 [`GPT-SoVITS-Environment-Setup.md`](./GPT-SoVITS-Environment-Setup.md)

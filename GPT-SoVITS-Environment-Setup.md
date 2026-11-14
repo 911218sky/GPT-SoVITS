@@ -151,6 +151,35 @@ Upgrade later: `uv tool upgrade yt-dlp`.
 
 Speaker diarization (pick one person from multi-speaker audio) is **not** bundled; install on demand (e.g. pyannote) when Workflow C needs it, with user consent (HF token may be required).
 
+
+
+## 5.6 WhisperX (primary ASR + diarization)
+
+Install into the **same** project `.venv` that already has CUDA torch (avoid reinstalling torch):
+
+```bash
+uv pip install --python .venv/bin/python whisperx --no-deps
+uv pip install --python .venv/bin/python \
+  "faster-whisper>=1.1.1" ctranslate2 "transformers>=4.48.0" av \
+  "pyannote.audio>=3.3.2" pandas nltk onnxruntime
+```
+
+Download **faster-whisper-medium** weights (~1.5GB). Prefer multi-connection download:
+
+```bash
+sudo apt install -y aria2
+mkdir -p /path/to/faster-whisper-medium && cd /path/to/faster-whisper-medium
+aria2c -c -x 16 -s 16 -o model.bin \
+  "https://huggingface.co/Systran/faster-whisper-medium/resolve/main/model.bin"
+# also: config.json tokenizer.json vocabulary.txt from the same repo
+```
+
+CLI wrapper example: call `.venv/bin/whisperx` with `--model /path/to/faster-whisper-medium`.
+
+Diarization needs `HF_TOKEN` and accepting gated model terms on Hugging Face.
+
+**Speed tip:** On some hosts official `pypi.org` is faster than regional mirrors—benchmark before forcing a mirror. Large Hub files: use `aria2c -x16`, not single-thread `wget`.
+
 ## 6. Verification checklist
 
 ```bash
@@ -160,6 +189,7 @@ cd /path/to/GPT-SoVITS
 command -v uv && uv --version
 command -v ffmpeg
 command -v yt-dlp || echo MISS yt-dlp
+command -v whisperx || echo MISS whisperx
 test -x .venv/bin/python && .venv/bin/python -V
 test -x local_tts/.venv/bin/python && local_tts/.venv/bin/python -V
 
