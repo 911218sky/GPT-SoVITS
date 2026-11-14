@@ -20,11 +20,31 @@ LOGGER = logging.getLogger(__name__)
 AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".aac", ".flac", ".m4a"})
 NUMBERED_STEM = re.compile(r"^(\d+)$")
 BYTES_PER_MEGABYTE: Final = 1024 * 1024
+# 從中繼／成品目錄名還原 batch_tts 輸出名（書名_角色）
+_MERGE_NAME_SUFFIXES: Final = ("_prepared", "_merged", "_clean", "_tempo")
 
 
 def default_workers() -> int:
     """未指定 --workers 時用滿全部邏輯核心。"""
     return max(1, os.cpu_count() or 4)
+
+
+def merge_output_basename(source_dir: Path) -> str:
+    """合併檔預設名：`<書名_角色>.mp3`（成品為 `1_書名_角色.mp3`）。"""
+    name = source_dir.name
+    for suffix in _MERGE_NAME_SUFFIXES:
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    name = name.strip() or source_dir.name
+    return f"{name}.mp3"
+
+
+def resolve_merge_output_name(explicit: str | None, source_dir: Path) -> str:
+    """`--output-name` 有值則用；否則依來源目錄推成 `書名_角色.mp3`。"""
+    if explicit:
+        return explicit if explicit.lower().endswith(".mp3") else f"{explicit}.mp3"
+    return merge_output_basename(source_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -428,9 +448,9 @@ def merge_audios(
         futures: dict[Future[None], Path] = {}
         for index, group in enumerate(merge_groups, start=1):
             output_path = output_dir / f"{index}_{output_file_name}"
+            # Always regenerate: stale partial merges must not be skipped.
             if output_path.exists():
-                results.append(output_path)
-                continue
+                output_path.unlink()
             futures[executor.submit(concatenate_audio_files, group, output_path)] = output_path
         for future in concurrent.futures.as_completed(futures):
             output_path = futures[future]
@@ -670,7 +690,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p_all.add_argument("--tempo", type=float, default=1.0, help="語速，1.0=不調")
     p_all.add_argument("--max-size-mb", type=_positive_megabytes, default=1024)
-    p_all.add_argument("--output-name", default="tts_powerful_output.mp3")
+    p_all.add_argument(
+        "--output-name",
+        default=None,
+        help="合併檔名（預設依 --input 目錄名：1_<書名_角色>.mp3）",
+    )
     p_all.add_argument(
         "--legacy",
         action="store_true",
@@ -695,7 +719,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p_merge = sub.add_parser("merge", help="只合併編號音檔")
     p_merge.add_argument("--input-folder", "--input", type=Path, required=True, dest="input_folder")
     p_merge.add_argument("--output-dir", "--output", type=Path, required=True, dest="output_dir")
-    p_merge.add_argument("--output-name", default="tts_powerful_output.mp3")
+    p_merge.add_argument(
+        "--output-name",
+        default=None,
+        help="合併檔名（預設依來源目錄名：1_<書名_角色>.mp3）",
+    )
     p_merge.add_argument("--max-size-mb", type=_positive_megabytes, default=1024)
     p_merge.add_argument("--suffix", default="mp3")
     p_merge.add_argument("--workers", type=int, default=None, help=f"並行數（預設用滿 CPU={default_workers()}）")
@@ -729,10 +757,11 @@ def cmd_tempo(args: argparse.Namespace) -> int:
 
 
 def cmd_merge(args: argparse.Namespace) -> int:
+    output_name = resolve_merge_output_name(args.output_name, args.input_folder)
     outputs = merge_audios(
         input_folder=args.input_folder,
         output_dir=args.output_dir,
-        output_file_name=args.output_name,
+        output_file_name=output_name,
         max_total_size=args.max_size_mb * BYTES_PER_MEGABYTE,
         audio_suffix=args.suffix,
         max_workers=args.workers,
@@ -748,6 +777,7 @@ def cmd_all(args: argparse.Namespace) -> int:
 
     work_dir = (args.work_dir or Path(f"{input_dir}_prepared")).resolve()
     output_dir = (args.output_dir or Path(f"{input_dir}_merged")).resolve()
+    output_name = resolve_merge_output_name(args.output_name, input_dir)
     do_tempo = abs(args.tempo - 1.0) > 1e-6
 
     LOGGER.info("=== finish_audio all ===")
@@ -794,7 +824,7 @@ def cmd_all(args: argparse.Namespace) -> int:
         outputs = merge_audios(
             merge_source,
             output_dir,
-            output_file_name=args.output_name,
+            output_file_name=output_name,
             max_total_size=args.max_size_mb * BYTES_PER_MEGABYTE,
             audio_suffix="mp3",
             max_workers=args.workers,
@@ -810,11 +840,11 @@ def cmd_all(args: argparse.Namespace) -> int:
             quality=args.quality,
             max_workers=args.workers,
         )
-        LOGGER.info("[2/2] 合併 → %s", output_dir)
+        LOGGER.info("[2/2] 合併 → %s（%s）", output_dir, output_name)
         outputs = merge_audios(
             work_dir,
             output_dir,
-            output_file_name=args.output_name,
+            output_file_name=output_name,
             max_total_size=args.max_size_mb * BYTES_PER_MEGABYTE,
             audio_suffix="mp3",
             max_workers=args.workers,
