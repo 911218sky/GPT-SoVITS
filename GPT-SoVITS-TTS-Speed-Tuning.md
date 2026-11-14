@@ -162,11 +162,12 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 - **現象：** microbatch/逐句時，每句重跑 `ref_enc`，VITS 額外變慢。  
 - **修復：** `GPT_SoVITS/module/models.py` `SynthesizerTrn.decode` 的 `_tts_ge_cache`。
 
-### D. 每請求 `empty_cache` 的取捨
+### D. `empty_cache` 的取捨
 
-- **不做：** 熱身後顯存碎片累積，下一次 `vits` 變慢（曾見整段 concat 後 7.8GB，熱跑變差）。  
-- **每請求做（`EMPTY_CACHE=1`）：** 略有同步成本，但本機可穩定 ~230+。  
-- **`16`：** 較猛，長跑可能又慢回來。本機預設改回 `1`。
+- **推理途中不做（`EMPTY_CACHE=0`，目前預設）：** 少一次 CUDA sync，熱跑才能停在每秒 300 字以上。  
+- **每請求做（`EMPTY_CACHE=1`）：** 最穩，但同步成本會把整段平均從約 320 拉回 270 附近。  
+- **跑完一定清一次：** `GET /control?command=empty_cache`。`batch_tts` 結束（含中途失敗）會自動打。權重留在顯存，下一輪不用重載。  
+- 整本小說若顯存一路爬、`vits` 變長，把 `EMPTY_CACHE` 改回 `16`，不要改回每請求。
 
 ### E. 其他（次要）
 
@@ -185,7 +186,7 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 | `CUDAGraph` | `0` | 舊的 Accel **靜態**圖。8GB 必須關 |
 | `GPT_SOVITS_T2S_STEP_GRAPH` | `1` | 逐步圖。程式預設開；設 `0` 退回普通 T2S |
 | `GPT_SOVITS_VITS_MICROBATCH` | `16` | VITS 每次最多合 16 句 |
-| `GPT_SOVITS_EMPTY_CACHE` | `1` | 每請求清 CUDA 快取 |
+| `GPT_SOVITS_EMPTY_CACHE` | `0` | 推理途中不收。`batch_tts` 結束打一次 `/control?command=empty_cache` |
 | `GPT_SOVITS_T2S_MAX_BATCH` | `8` | 只在強制開舊靜態圖時使用 |
 | `TQDM_DISABLE` | `1` | 少印進度 |
 
@@ -210,6 +211,7 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 | Graph 關 + micro=0（整段） | ~150–165 但不穩 | 熱跑顯存頂高 |
 | Graph 關 + micro=16 + empty=1 | ~230–240 | 2026-11-14，尚無逐步圖 |
 | **逐步圖開 + 同上** | **292（1200 字）／359（5000 字）** | **2026-11-15 採用** |
+| **逐步圖 + `EMPTY_CACHE=0` + 跑完再清** | **310（真人男 3 萬字，1 分 35 秒）** | **目前預設** |
 
 ---
 
@@ -222,7 +224,7 @@ cd /home/sky/code/GPT-SoVITS
 mkdir -p /tmp/tts_bench
 pkill -f api_v2.py; pkill -f local_tts.start_api; sleep 1
 
-setsid env CUDAGraph=0 GPT_SOVITS_VITS_MICROBATCH=16 GPT_SOVITS_EMPTY_CACHE=1 \
+setsid env CUDAGraph=0 GPT_SOVITS_VITS_MICROBATCH=16 GPT_SOVITS_EMPTY_CACHE=0 \
   GPT_SOVITS_TIMING_LOG=/tmp/tts_bench/timing.log PYTHONUNBUFFERED=1 \
   ./local_tts/start_api.sh --role cintia --host 127.0.0.1 --port 9880 \
   >/tmp/tts_bench/api.log 2>&1 < /dev/null &
@@ -353,7 +355,7 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 | 顯存 | `VITS_MICROBATCH` | `EMPTY_CACHE` | `T2S_STEP_GRAPH` | `CUDAGraph` |
 |---|---|---|---|---|
 | 6GB 或更小 | `4` 或 `8` | `1` | 先 `1`；若 capture 時 OOM 改 `0` | `0` |
-| 8GB（本機） | `16` | `1` | `1` | `0` |
+| 8GB（本機） | `16` | `0`，跑完再清一次 | `1` | `0` |
 | 12–16GB | 先 `16`，再試 `32` | `1`，長跑穩定可試 `0` | `1` | `0`，確認閒置顯存低於一半再考慮 `1` |
 | 24GB 以上 | `32` 或 `0`（整段一次解） | `0` 或 `16` | `1` | 可以試 `1`，但先看 VITS 是否變慢 |
 

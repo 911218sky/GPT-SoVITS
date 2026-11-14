@@ -598,6 +598,10 @@ async def tts_handle(req: dict, raw_streaming_mode=None):
 async def control(command: str = None):
     if command is None:
         return JSONResponse(status_code=400, content={"message": "command is required"})
+    if command == "empty_cache":
+        async with _tts_pipeline_lock:
+            await _run_in_threadpool_shielded(tts_pipeline.empty_cache)
+        return JSONResponse(status_code=200, content={"message": "cache released"})
     handle_control(command)
 
 

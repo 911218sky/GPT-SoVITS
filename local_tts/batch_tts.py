@@ -26,8 +26,8 @@ DEFAULT_FRAGMENT_INTERVAL = 0.01
 DEFAULT_REPETITION_PENALTY = 1.35
 DEFAULT_SPLIT_METHOD = "cut5"
 DEFAULT_TOP_K = 15
-# 本機最快組 + 微優化（skip empty_cache / TQDM_DISABLE / SV cache）確認平均約 328 字/秒
-DEFAULT_CHARS_PER_SEC = 328.0
+# 真人男、吃神者 3 萬字、empty_cache=0、跑完再清：約 310 字/秒（2026-11-15）
+DEFAULT_CHARS_PER_SEC = 310.0
 
 
 def format_duration(seconds: float) -> str:
@@ -157,6 +157,19 @@ def build_payload(profile: RoleProfile, text: str, args: argparse.Namespace) -> 
     }
 
 
+def release_server_cache(server_url: str) -> None:
+    try:
+        response = requests.get(
+            f"{server_url.rstrip('/')}/control",
+            params={"command": "empty_cache"},
+            timeout=120,
+        )
+        response.raise_for_status()
+        LOGGER.info("已釋放 CUDA 快取")
+    except Exception as error:
+        LOGGER.warning("釋放 CUDA 快取失敗：%s", error)
+
+
 def set_model(server_url: str, profile: RoleProfile) -> None:
     for endpoint, path in (
         ("/set_gpt_weights", profile.gpt_weights_path),
@@ -221,8 +234,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
+def _run_batch(args: argparse.Namespace) -> int:
     profile = get_role_profile(args.role)
     input_path = require_file(args.file_path, "輸入文字檔")
     output_dir = args.output_dir or Path(__file__).resolve().parent / "output" / f"GPT_{args.role}_{input_path.stem}"
@@ -322,6 +334,14 @@ def main() -> int:
         LOGGER.info("全部區段已存在，已跳過 %d 段，無需轉換", skipped)
     LOGGER.info("完成：%s", output_dir)
     return 0
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        return _run_batch(args)
+    finally:
+        release_server_cache(args.server_url)
 
 
 if __name__ == "__main__":
