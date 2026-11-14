@@ -131,6 +131,26 @@ Keep large audio, novels, and weights out of git.
 
 ---
 
+
+
+## 5.5 Optional: yt-dlp (video / Bilibili download)
+
+Used by [AI Workflow](./GPT-SoVITS-AI-Workflow.md) **Workflow C**.
+
+```bash
+# Recommended with uv:
+uv tool install yt-dlp
+export PATH="$HOME/.local/bin:$PATH"
+yt-dlp --version
+
+# Also need ffmpeg (system package)
+sudo apt install -y ffmpeg   # if missing
+```
+
+Upgrade later: `uv tool upgrade yt-dlp`.
+
+Speaker diarization (pick one person from multi-speaker audio) is **not** bundled; install on demand (e.g. pyannote) when Workflow C needs it, with user consent (HF token may be required).
+
 ## 6. Verification checklist
 
 ```bash
@@ -139,6 +159,7 @@ cd /path/to/GPT-SoVITS
 
 command -v uv && uv --version
 command -v ffmpeg
+command -v yt-dlp || echo MISS yt-dlp
 test -x .venv/bin/python && .venv/bin/python -V
 test -x local_tts/.venv/bin/python && local_tts/.venv/bin/python -V
 

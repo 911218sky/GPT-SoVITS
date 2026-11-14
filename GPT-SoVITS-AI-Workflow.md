@@ -1,15 +1,23 @@
 # GPT-SoVITS AI Workflow
 
-Playbook for assistants and humans: when the user gives **audio with BGM** or a **novel TXT**, ask before acting, then run the pipeline.
+Playbook for assistants and humans. Ask before long or destructive steps, then run the pipeline.
+
+**Inputs this playbook covers:**
+
+| Input | Workflow |
+|-------|----------|
+| Audio with BGM / raw recording | **A** → clean → slice → ASR → train |
+| Novel TXT | **B** → role TTS |
+| Video URL or local video (e.g. Bilibili) | **C** → download → extract audio → (optional target speaker) → then **A** |
 
 Also see:
 
 - [Operations Guide](./GPT-SoVITS-Operations-Guide.md)
 - [Environment Setup](./GPT-SoVITS-Environment-Setup.md)
 - [local_tts README](./local_tts/README.md)
-- [Performance Guide](./GPT-SoVITS-Performance-Guide.md) / [local_tts/Performance-Guide.md](./local_tts/Performance-Guide.md)
+- [Performance Guide](./GPT-SoVITS-Performance-Guide.md)
 
-Host-specific inventory (what is already installed on one PC) belongs in a **local** note outside this repo, not here.
+Host-specific inventory (what is already installed on one PC) belongs in a **local** note outside this repo.
 
 ---
 
@@ -18,208 +26,220 @@ Host-specific inventory (what is already installed on one PC) belongs in a **loc
 ```bash
 cd /path/to/GPT-SoVITS
 test -x .venv/bin/python && test -x local_tts/.venv/bin/python
+command -v ffmpeg
+# Video pipeline:
+command -v yt-dlp || echo "MISS yt-dlp — see Environment Setup"
 ls tools/uvr5/uvr5_weights/HP3_all_vocals.pth \
    tools/uvr5/uvr5_weights/VR-DeEchoAggressive.pth \
-   tools/uvr5/uvr5_weights/onnx_dereverb_By_FoxJoy/vocals.onnx
-command -v ffmpeg
+   tools/uvr5/uvr5_weights/onnx_dereverb_By_FoxJoy/vocals.onnx 2>/dev/null || true
 ```
 
-If anything is missing, follow [Environment Setup](./GPT-SoVITS-Environment-Setup.md).
+### Roles
 
-### Roles (`local_tts/common.py` → `ROLE_PROFILES`)
-
-List available roles from that file and verify each role’s `.ckpt` / `.pth` / ref `.wav` under `local_tts/assets/`.  
-Default recommendation when present: **真人男** (v2Pro). Skip roles with missing assets.
+Read `local_tts/common.py` → `ROLE_PROFILES`. Verify each role’s `.ckpt` / `.pth` / ref `.wav`.  
+Default recommendation when present: **真人男** (v2Pro).
 
 ---
 
-## 1. Workflow A — Audio with BGM → dataset → train
+## 1. Workflow A — Audio → dataset → train
 
-### 1.1 Ask the user (do not start training until answered)
+### 1.1 Ask the user
 
 1. Input audio path  
 2. Speaker / `exp_name`  
-3. Language for ASR/train (`zh` default, or `yue`/`ja`/`en`/`ko`/`auto`)  
-4. UVR model order: accept recommended three-step or custom?  
-5. Slice preset A/B/C/D or custom numbers?  
-6. Optional denoise? (may download models)  
-7. Strong AI quality review + delete bad clips? (yes/no)  
-8. Train version: recommend **v2Pro** if matching existing `local_tts` roles; else `v2ProPlus`/`v2`/`v3`/`v4`/`v5*`/custom  
-9. After train: register into `local_tts`? which ref wav?  
-10. Any other custom settings? User says **go** only when ready  
+3. Language (`zh` default)  
+4. UVR order: recommended three-step or custom?  
+5. Slice preset A/B/C/D?  
+6. Optional denoise?  
+7. Strong AI quality review + delete bad clips?  
+8. Train version (recommend **v2Pro** if matching `local_tts`)  
+9. Register into `local_tts` after train?  
+10. User says **go** only when ready  
 
-### 1.2 Suggested folders
+### 1.2 Folders
 
 ```text
 <data_root>/<exp_name>/
   raw/
   uvr_vocal/
   slicer/
-  slicer_good/          # optional after QA
+  slicer_good/
   slicer.list
 ```
 
-### 1.3 UVR5 (remove BGM / reverb)
+### 1.3 UVR5 (BGM / reverb — not different people)
 
-- Code: `tools/uvr5/webui.py` (Gradio; **no headless CLI**)  
-- Weights: `tools/uvr5/uvr5_weights/`  
-- Start via `./local_tts/start_web.sh` then UVR UI (port from `config.py`, default **9873**)
+UVR separates **vocals vs accompaniment**, **not** speaker A vs speaker B.
 
-Recommended order for speech + BGM:
+Recommended: `HP3_all_vocals` → `onnx_dereverb_By_FoxJoy` → `VR-DeEchoAggressive`.  
+UI: Gradio only (`tools/uvr5/webui.py`, port ~9873). No headless CLI.
 
-1. `HP3_all_vocals` — drop BGM  
-2. `onnx_dereverb_By_FoxJoy` — dereverb  
-3. `VR-DeEchoAggressive` — de-echo  
+### 1.4 Slice / ASR / QA / train
 
-Alternatives: `HP5_only_main_vocal` (with harmony), `HP2_all_vocals`, other DeEcho models.
+Same as before:
 
-If the assistant cannot drive a browser, pause and ask the user to finish UVR (or use browser automation).
-
-### 1.4 Slice (keep clearer speech)
-
-```bash
-.venv/bin/python -s tools/slice_audio.py \
-  "<input file or dir>" "<out dir>" \
-  <threshold> <min_length> <min_interval> <hop_size> <max_sil_kept> \
-  <_max> <alpha> <i_part> <n_parts>
-```
-
-WebUI defaults (`webui.py`): threshold `-34`, min_length `4000`, min_interval `300`, hop_size `10`, max_sil_kept `500`, `_max` `0.9`, `alpha` `0.25`. Single file forces `n_parts=1`.
-
-Ask the user:
-
-- **A** defaults  
-- **B** shorter/clearer: stricter threshold / smaller min_length  
-- **C** longer segments  
-- **D** fully custom  
-
-Report clip count and duration; ask whether to re-slice.
-
-### 1.5 Denoise (optional)
-
-```bash
-.venv/bin/python -s tools/cmd-denoise.py -i "<in>" -o "<out>" -p float16
-```
-
-Skip unless the user agrees (may need network if local denoise weights are absent).
-
-### 1.6 ASR
-
-Prefer Chinese FunASR:
-
-```bash
-.venv/bin/python -s tools/asr/funasr_asr.py \
-  -i "<clips dir>" -o "<out dir>" -l zh --backend fun-asr-nano
-```
-
-`.list` format:
-
-```text
-/abs/path/clip.wav|SpeakerName|ZH|transcript text
-```
-
-### 1.7 Quality review (ask: stronger check?)
-
-If yes: scan `.list` for empty/junk text, bad duration, broken paths; propose deletes; **wait for confirm** before deleting; copy keepers to `slicer_good/` and rewrite list.  
-If no: only light checks (path exists, non-empty text).
-
-### 1.8 Train version (ask)
-
-Recommend **v2Pro** when aligning with current `local_tts` v2Pro assets. Confirm epochs/batch or WebUI defaults. On a single mid-range GPU, do not run UVR + train + long TTS in parallel.
-
-**Start training only after the user says go.**
-
-### 1.9 Train
-
-```bash
-./local_tts/start_web.sh
-# http://127.0.0.1:9874
-```
-
-Order: clean clips → (slice) → ASR `.list` → check labels → BERT/SSL/semantic → SoVITS → GPT.  
-Outputs under `logs/<exp>/` and versioned `SoVITS_weights_*` / `GPT_weights_*` (see `config.py`).
-
-Notify the user when done; ask whether to copy weights into `local_tts/assets/` and register `ROLE_PROFILES`.
+- Slice: `tools/slice_audio.py` (WebUI defaults: threshold `-34`, min_length `4000`, …)  
+- ASR: `tools/asr/funasr_asr.py` → `.list` = `path|speaker|LANG|text`  
+- QA: ask before deletes  
+- Train: `./local_tts/start_web.sh` after user says go; notify when done  
 
 ---
 
 ## 2. Workflow B — Novel TXT → audio
 
-### 2.1 Ask
+Ask: TXT path, **role**, tempo / output / OOM policy → `start_api` → `batch_tts` → `finish_audio`.  
+Details: [local_tts README](./local_tts/README.md).
 
-1. TXT path (UTF-8)  
-2. Which role from `ROLE_PROFILES` (warn on missing assets)  
-3. API already up + `batch_tts --no-set-model`?  
-4. Output dir name  
-5. `finish_audio.sh all --tempo 0.9` OK? custom tempo / max MB?  
-6. On OOM, auto lower `--batch-size` (64→48→40)?  
+---
 
-### 2.2 Commands
+## 3. Workflow C — Video → audio dataset (then A)
+
+Use when the user gives a **Bilibili / YouTube / other URL** or a local video file, and wants training data (or a clean voice track).
+
+### 3.1 Ask first
+
+1. **Video source:** URL and/or local path  
+2. **Which voice to keep?** (critical if multi-speaker — see §3.4)  
+3. Keep video file after extract, or audio-only?  
+4. Need remove BGM (UVR) after extract?  
+5. Then continue into Workflow **A** (slice / ASR / train)? Which `exp_name`?  
+6. Output directory under data root  
+
+### 3.2 Download (URL)
+
+Prefer **yt-dlp** + system **ffmpeg**:
 
 ```bash
-./local_tts/start_api.sh --role <role>
+# Best audio-friendly: download best video+audio, or audio-only
+yt-dlp -o "<out_dir>/%(title)s [%(id)s].%(ext)s" \
+  --no-playlist \
+  "<URL>"
 
-./local_tts/batch_tts.sh \
-  --file-path "/path/to/novel.txt" \
-  --role <role> \
-  --no-set-model \
-  --output-dir "local_tts/output/<name>_<role>"
-
-./local_tts/finish_audio.sh all \
-  --input "local_tts/output/<name>_<role>" \
-  --tempo 0.9 \
-  --max-size-mb 1024
+# Audio-only extract while downloading (m4a/webm often):
+yt-dlp -o "<out_dir>/%(title)s [%(id)s].%(ext)s" \
+  -x --audio-format wav --audio-quality 0 \
+  --no-playlist \
+  "<URL>"
 ```
 
-Defaults tuned for ~8GB GPU are documented in Performance Guide (`max_text_length=1200`, `batch_size=64`, etc.). One `/tts` at a time; resume by re-running the same command.
+Notes:
 
----
+- Bilibili usually works; login-gated / 大会员 content may need cookies (`--cookies-from-browser` or cookies file) — **ask the user** before using browser cookies.  
+- Prefer `--no-playlist` unless the user wants a whole series.  
+- If download fails, report the error; try another format `-f bv+ba/b` or update yt-dlp.
 
-## 3. State machine
+### 3.3 Extract audio from local video
+
+```bash
+ffmpeg -y -i "<video>" -vn -ac 1 -ar 32000 "<out_dir>/raw_audio.wav"
+```
+
+(32 kHz mono matches GPT-SoVITS slicer expectations; stereo OK if downstream converts.)
+
+Save under: `<data_root>/<exp_name>/raw/` then proceed to UVR / slice as in **A**.
+
+### 3.4 Multiple people in one video — can we pick one person?
+
+**Yes, but UVR alone cannot do it.** UVR ≠ speaker ID.
+
+| Goal | Approach |
+|------|----------|
+| Remove music / noise, keep all speech | UVR (Workflow A) |
+| Keep **only one person’s** speech | **Speaker diarization** (+ user picks which ID), or **reference-voice match** |
+
+#### Option 1 — Diarization then user picks (recommended default)
+
+1. Run speaker diarization on the (preferably UVR-cleaned) vocal track.  
+2. Export one folder per speaker: `spk00/`, `spk01/`, … with short sample clips.  
+3. **Ask the user:** “Which speaker is the target? (spk00 / spk01 / …)” — play or list durations.  
+4. Keep only that speaker’s segments → merge or keep as clips → Workflow A slice/ASR if needed.  
+
+Typical stack: **pyannote.audio** (may need Hugging Face token + model download on first use). If not installed, tell the user, install with consent, then run.
+
+#### Option 2 — User provides a short reference of the target person
+
+1. User gives ~5–15 s of **only** the target voice (or points to a time range in the video).  
+2. Match segments by speaker embedding / verification; discard others.  
+3. Confirm a few clips with the user before deleting the rest.
+
+#### Option 3 — Time ranges only
+
+User says “only 03:20–12:00” or “skip the guest at the end” → `ffmpeg -ss -to` cut first, then A.  
+Works when speakers don’t overlap much in time; fails for frequent turn-taking.
+
+#### Overlapping speech
+
+If two people talk at once, automatic separation is **hard**. Say so; offer: keep as-is and rely on later QA deletes, or ask for a cleaner source.
+
+### 3.5 Suggested folder layout for video jobs
 
 ```text
-Audio? → Workflow A
-Novel TXT? → Workflow B
-Else ask: train voice or novel TTS?
+<data_root>/<exp_name>/
+  video/                 # yt-dlp output (optional keep)
+  raw/                   # extracted wav
+  uvr_vocal/             # after UVR
+  diarize/spk00|spk01/   # after diarization
+  target/                # chosen speaker only
+  slicer/
+  slicer.list
 ```
 
-Gates A0–A8 / B0–B3: always offer a **recommended default + one-line reason**; user may reply “use defaults / go”.
+### 3.6 End-to-end gate order (video)
+
+```text
+[C0] URL/path + exp_name + which voice strategy
+[C1] yt-dlp download (ask cookies if needed)
+[C2] ffmpeg extract wav
+[C3] UVR if BGM (ask)
+[C4] If multi-speaker: diarize → user picks ID (or reference match)
+[C5] Continue Workflow A from slice → ASR → QA → train version → go
+```
 
 ---
 
-## 4. Code map
+## 4. State machine
 
-| Step | Files |
-|------|--------|
-| UVR | `tools/uvr5/webui.py`, `vr.py`, `mdxnet.py`, `bsroformer.py` |
-| Slice | `tools/slice_audio.py`, `tools/slicer2.py` |
-| Denoise | `tools/cmd-denoise.py` |
-| ASR | `tools/asr/funasr_asr.py`, `fasterwhisper_asr.py` |
-| Train UI | `webui.py`, `config.py` |
-| Roles | `local_tts/common.py` |
+```text
+Video URL / file?     → Workflow C (then often A)
+Audio / recording?    → Workflow A
+Novel TXT?            → Workflow B
+Else                  → ask which of A / B / C
+```
+
+Always offer a **recommended default + one-line reason**.
+
+---
+
+## 5. Code / tool map
+
+| Step | Tool / file |
+|------|-------------|
+| Download video | `yt-dlp` |
+| Extract / cut audio | `ffmpeg` |
+| Remove BGM | `tools/uvr5/webui.py` |
+| Slice | `tools/slice_audio.py` |
+| ASR | `tools/asr/funasr_asr.py` |
+| Target speaker | diarization (e.g. pyannote) — install on demand |
+| Train | `webui.py` / `./local_tts/start_web.sh` |
 | Novel TTS | `local_tts/start_api.sh`, `batch_tts.sh`, `finish_audio.sh` |
 
-`local_tts` does not patch upstream `api_v2.py` / `webui.py`.
+---
+
+## 6. Limitations (say upfront)
+
+1. UVR does not separate different people.  
+2. Diarization needs extra install + often a HF token; first run downloads models.  
+3. Login-walled Bilibili may need user-provided cookies.  
+4. Overlapped speech cannot be cleanly split with this stack alone.  
+5. Single GPU: do not stack download+UVR+train+long TTS.
 
 ---
 
-## 5. Known limitations (generic)
+## 7. Quick path: “Bilibili video → train one person’s voice”
 
-1. UVR has no headless CLI (Gradio)  
-2. Local denoise weights may be absent (network fallback)  
-3. Some roles may lack ref wav — verify before use  
-4. Single GPU: do not stack heavy jobs  
-
----
-
-## 6. Quick path: “30-min audio with BGM”
-
-1. Ask §1.1  
-2. Store under data `raw/`  
-3. UVR: HP3 → onnx_dereverb → DeEchoAggressive  
-4. Slice with agreed params  
-5. FunASR → `.list`  
-6. Optional QA deletes  
-7. Confirm version (default v2Pro) → user says go → train  
-8. Notify + optional `local_tts` registration  
-9. Later novels → Workflow B (ask role first)
+1. Ask URL, `exp_name`, language, **who to keep** (name/description or “I’ll pick after diarize”).  
+2. `yt-dlp` → `ffmpeg` wav → `raw/`.  
+3. UVR if needed.  
+4. If multi-speaker: diarize → **user picks speaker ID** → `target/`.  
+5. Slice → ASR → optional QA.  
+6. Ask train version (default v2Pro) → user says go → train → notify.  
