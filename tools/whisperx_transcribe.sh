@@ -3,6 +3,10 @@
 # Usage:
 #   ./tools/whisperx_transcribe.sh <audio> <output_dir> [--diarize] [--model PATH] [--language zh]
 set -euo pipefail
+if [[ -f "${HOME}/.config/gpt-sovits-secrets.env" ]]; then
+  # shellcheck disable=SC1091
+  . "${HOME}/.config/gpt-sovits-secrets.env"
+fi
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY="${WHISPERX_PYTHON:-$ROOT/.venv/bin/python}"
