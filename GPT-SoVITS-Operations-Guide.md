@@ -4,7 +4,7 @@
 
 **給後續 AI 的完整互動工作流（帶 BGM 音檔→切分→ASR→訓練；小說→TTS）請優先讀：**
 
-[`GPT-SoVITS-AI-Workflow.md`](./GPT-SoVITS-AI-Workflow.md)
+[`GPT-SoVITS-AI-Workflow.md`](./GPT-SoVITS-AI-Workflow.md)（含 **§8 顯存控管**、**§9 cintia 實戰**、UVR／`batch_tts.sh`）· [`GPT-SoVITS-Audio-Quality-Guide.md`](./GPT-SoVITS-Audio-Quality-Guide.md)（語音品質好壞標準與優化決策樹）
 
 影片／B 站下載 → 抽聲音 →（可指定目標說話者）→ 訓練資料：見 AI Workflow **Workflow C**。
 

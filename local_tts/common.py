@@ -55,6 +55,13 @@ ROLE_PROFILES = {
         prompt_text="今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。",
         speed_factor=1.0,
     ),
+    "cintia": RoleProfile(
+        gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "cintia-e15.ckpt",
+        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "cintia_e10_s210.pth",
+        ref_audio_path=DATA_ROOT / "cintia" / "ref.wav",
+        prompt_text="回到九天大堂的时候刚好碰到了高飞和布鲁托远远的跟我们",
+        speed_factor=1.0,
+    ),
     "真人男": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "真人男-e15.ckpt",
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "真人男_e8_s112.pth",
