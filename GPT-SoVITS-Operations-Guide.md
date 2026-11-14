@@ -9,6 +9,7 @@
 環境安裝／驗證（uv、權重、UVR、檢查清單）：
 
 [`GPT-SoVITS-Environment-Setup.md`](./GPT-SoVITS-Environment-Setup.md)
+
 目標是讓新的 AI 或使用者快速知道：資料放哪裡、如何訓練聲音、如何載入模型，以及如何把 TXT 小說轉成真人男聲音檔。
 
 詳細的本機批次 TTS 指令請直接閱讀：
@@ -110,7 +111,7 @@ cd /home/sky/code/GPT-SoVITS
   --output-dir "local_tts/output/罪名不朽_310_真人男"
 ```
 
-輸出會是一組編號 WAV。中斷後重新執行相同指令即可續跑，已存在的編號檔會跳過。單張 GPU 不要同時執行多個批次工作。預設已用 3060 Ti 掃速最快組（約 1200 字/段、`batch_size=64`）。CUDA OOM 時依序嘗試 `--batch-size 56`、`48`、`40`。
+輸出會是一組編號 WAV。中斷後重新執行相同指令即可續跑，已存在的編號檔會跳過。單張 GPU 不要同時執行多個批次工作。預設批次參數見 [Performance Guide](./GPT-SoVITS-Performance-Guide.md)（約 1200 字/段、`batch_size=64` 為常見 8GB 設定）。CUDA OOM 時依序嘗試 `--batch-size 56`、`48`、`40`。
 
 ## 6. 清理、調語速與合併音檔
 

@@ -30,6 +30,8 @@ A Powerful Few-shot Voice Conversion and Text-to-Speech WebUI.<br><br>
 
 ## Local docs (this fork)
 
+Machine-specific install inventory belongs **outside** this repo (do not commit host status here).
+
 - [Environment Setup](./GPT-SoVITS-Environment-Setup.md)
 - [AI Workflow](./GPT-SoVITS-AI-Workflow.md) (BGM cleanup → slice → ASR → train; novel TTS)
 - [Operations Guide](./GPT-SoVITS-Operations-Guide.md)
