@@ -16,19 +16,29 @@
 
 ---
 
-## 0. 一句話結論（2026-11-14 實測）
+## 0. 一句話結論（2026-11-15 實測）
 
-**不是環境壞掉。** 慢的主因是 `bf8c5a3` 併入 **Accel / CUDA Graph** 後，在 **8GB** 卡上把顯存吃滿，VITS 被擠到 thrash。
+慢的主因仍是舊的 **Accel 靜態 CUDA Graph** 在 8GB 上把顯存吃滿。那個開關繼續關。
 
-**本機目前最快預設（熱身約 230–240 字/秒，1200 字約 5 秒）：**
+現在另有一條 **逐步 CUDA Graph**（`GPT_SOVITS_T2S_STEP_GRAPH`，預設開）：只把 T2S 每一步的 Transformer 收成圖，算完就放掉 KV，再跑 VITS。這條用的是 PyTorch 標準 CUDA Graph，不綁 RTX 3060 Ti，也不綁 UEFI 張量解鎖。
+
+**本機目前實測（cintia，fp16，WSL2）：**
+
+| 文章 | 牆鐘 | 字/秒 | 伺服器內部分段 |
+|---|---|---|---|
+| 1200 字，熱身 | 4.11 秒 | **292** | t2s 2.11 秒、vits 0.70 秒、文字 0.66 秒 |
+| 5000 字，一筆 | 13.92 秒 | **359** | t2s 6.15 秒、vits 4.21 秒、文字 2.97 秒 |
+
+顯存峰值約 6.8GB，閒置約 3.5GB。
 
 ```bash
 export CUDAGraph=0
+export GPT_SOVITS_T2S_STEP_GRAPH=1
 export GPT_SOVITS_VITS_MICROBATCH=16
 export GPT_SOVITS_EMPTY_CACHE=1
-# 其餘跟小說批次一樣：
+# 小說批次：
 # cut5, max_text_length=1200, batch_size=64, split_bucket=True, parallel_infer=True
-# fragment_interval=0.01, top_k=15
+# fragment_interval=0.01, top_k=15, speed_factor=1.0
 ```
 
 已寫進 `local_tts/start_api.sh` 預設。啟動：
@@ -172,10 +182,11 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 
 | 變數 | 預設 | 說明 |
 |---|---|---|
-| `CUDAGraph` | `0` | 8GB 必須關 |
+| `CUDAGraph` | `0` | 舊的 Accel **靜態**圖。8GB 必須關 |
+| `GPT_SOVITS_T2S_STEP_GRAPH` | `1` | 逐步圖。程式預設開；設 `0` 退回普通 T2S |
 | `GPT_SOVITS_VITS_MICROBATCH` | `16` | VITS 每次最多合 16 句 |
 | `GPT_SOVITS_EMPTY_CACHE` | `1` | 每請求清 CUDA 快取 |
-| `GPT_SOVITS_T2S_MAX_BATCH` | `8` | 若強制開 Graph 時的 batch 上限 |
+| `GPT_SOVITS_T2S_MAX_BATCH` | `8` | 只在強制開舊靜態圖時使用 |
 | `TQDM_DISABLE` | `1` | 少印進度 |
 
 批次小說參數（`local_tts/batch_tts.py` 預設，勿隨便改大）：
@@ -197,7 +208,8 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 | Graph 開滿顯存 | ~20–40 | 修前 |
 | Graph 關 + micro=1 | ~110–130 | 太碎 |
 | Graph 關 + micro=0（整段） | ~150–165 但不穩 | 熱跑顯存頂高 |
-| **Graph 關 + micro=16 + empty=1** | **~230–240** | **採用** |
+| Graph 關 + micro=16 + empty=1 | ~230–240 | 2026-11-14，尚無逐步圖 |
+| **逐步圖開 + 同上** | **292（1200 字）／359（5000 字）** | **2026-11-15 採用** |
 
 ---
 
@@ -274,7 +286,8 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 應回到 ~200MiB �
 速度 100–180？
   └─ 掃 MICROBATCH + EMPTY_CACHE，鎖定 warm 最高者
 速度 ≥ 200？
-  └─ 寫進 start_api.sh 預設；轉完小說關 API 放顯存
+  └─ 確認 log 有 `[T2S] step_graph` 而沒有 `step graph fallback`
+     1200 字熱身約 290、5000 字約 360 才算吃到逐步圖
 ```
 
 ---
@@ -286,6 +299,7 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 應回到 ~200MiB �
 3. **不要**用單次冷跑宣稱「變慢／變快」。  
 4. **不要**轉完小說還把 API 掛著佔顯存。  
 5. **不要**在 Windows 掛載碟（`X:`）直接改檔；用 SSH + 遠端腳本。
+6. **不要**因為 `CUDAGraph=0` 就把 `GPT_SOVITS_T2S_STEP_GRAPH` 也關掉。前者是會吃滿 8GB 的靜態圖，後者是算完就釋放的逐步圖。
 
 ---
 
@@ -294,4 +308,61 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 應回到 ~200MiB �
 | 日期 | 內容 |
 |---|---|
 | 2026-11-14 | 診斷 Accel/CUDA Graph 為主因；ge_cache + microbatch；鎖定 `CUDAGraph=0`、`MICROBATCH=16`、`EMPTY_CACHE=1`；熱身實測 ~230–240 字/秒 |
+| 2026-11-15 | 加上逐步 CUDA Graph（`GPT_SOVITS_T2S_STEP_GRAPH`）。1200 字 292 字/秒，5000 字 359 字/秒。舊靜態圖維持關閉 |
+
+---
+
+## 10. 其他 GPU，以及怎麼調到最快
+
+這份程式可以在其他 NVIDIA GPU 上跑。逐步圖不讀顯卡型號，只要求目前這份 PyTorch 能在該卡上跑 CUDA，並且 `scaled_dot_product_attention` 可用。已在 RTX 3060 Ti 8GB、WSL2、PyTorch 2.12.1+cu132、fp16 上量過。
+
+UEFI 張量解鎖（`nv-uefi-unlock-playbook`）是另一件事。它只影響 RTX 20／30／40 上的 FP16、BF16、TF32 大矩陣，大約把張量算力加倍；FP32 幾乎不變。沒有解鎖時，同一套程式一樣能跑，只是那些矩陣較慢。解鎖不會自動讓自回歸迴圈變兩倍，因為 T2S 每一步的矩陣很小，時間多半在 kernel 發射。
+
+### 10.1 兩個 Graph 開關
+
+| 變數 | 做什麼 | 建議 |
+|---|---|---|
+| `CUDAGraph` | Accel 靜態圖，事先佔住整段 KV | **保持 0**。8GB 上開了會讓 VITS 掉到每秒幾十個字 |
+| `GPT_SOVITS_T2S_STEP_GRAPH` | 每個 token 重放一次 Transformer，返回前釋放 KV | **保持 1** |
+
+Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出現 `step graph fallback` 表示這桶已改回普通 T2S，結果仍正確，只是這桶較慢。
+
+兩種自動退回：
+
+- `kv NNNNMB`：這桶的 KV 緩衝超過 2000MB，不分配。8GB 上不要放寬。16GB 以上若想讓超大 bucket 也走圖，改 `GPT_SoVITS/AR/models/t2s_model.py` 裡 `_batch_decode_step_graph` 的 `2000 * 1024 * 1024`。
+- `hit cap … still running`：有句子在 320 步內沒有結束符。這時整桶改走普通 T2S，避免把超長 token 送進 VITS。
+
+### 10.2 換顯卡時的調整順序
+
+先固定請求參數，再只動一個環境變數。每次用同一段文字，冷跑一次、熱跑兩次，以熱跑為準。看 log 的 `[TTS_TIMING]`。
+
+請求側（`batch_tts` 已是這組，直接打 API 時要自己帶）：
+
+| 參數 | 起步值 | 原因 |
+|---|---|---|
+| `text_split_method` | `cut5` | `cut2` 會明顯變慢 |
+| `batch_size` | `64` | 8 這種小批次會把 T2S 拆碎 |
+| `split_bucket` | 開 | 長度相近的句子才放同一桶 |
+| `parallel_infer` | 開 | 關掉大約只剩每秒幾十個字 |
+| `fragment_interval` | `0.01` | 句間靜音，不影響模型 |
+| `top_k` | `15` | 與目前模型訓練設定一致 |
+| `speed_factor` | `1.0` | 不是 1 會關掉分桶 |
+
+環境側，依顯存改：
+
+| 顯存 | `VITS_MICROBATCH` | `EMPTY_CACHE` | `T2S_STEP_GRAPH` | `CUDAGraph` |
+|---|---|---|---|---|
+| 6GB 或更小 | `4` 或 `8` | `1` | 先 `1`；若 capture 時 OOM 改 `0` | `0` |
+| 8GB（本機） | `16` | `1` | `1` | `0` |
+| 12–16GB | 先 `16`，再試 `32` | `1`，長跑穩定可試 `0` | `1` | `0`，確認閒置顯存低於一半再考慮 `1` |
+| 24GB 以上 | `32` 或 `0`（整段一次解） | `0` 或 `16` | `1` | 可以試 `1`，但先看 VITS 是否變慢 |
+
+判斷方式：
+
+- `vits` 變長、顯存頂到 90% 以上：把 `VITS_MICROBATCH` 減半。
+- `vits` 很短、顯存還很空：把 `VITS_MICROBATCH` 加倍，或設 `0` 試整段。
+- `t2s` 佔一半以上、而且沒有 `step_graph` 那行：逐步圖沒生效，檢查環境變數是不是 `0`，或是不是每桶都 fallback。
+- 閒置顯存超過總量的 75%：多半是舊靜態圖還開著，設 `CUDAGraph=0` 後重啟 API。
+
+本機 8GB 不要為了追數字把 `CUDAGraph` 設成 `1`。先前這樣做，熱身掉到約 39 字/秒。
 

@@ -364,6 +364,7 @@ class Text2SemanticDecoder(nn.Module):
             blocks.append(block)
 
         self.t2s_transformer = T2STransformer(self.num_layers, blocks)
+        self.t2s_blocks = blocks
 
     def make_input_data(self, x, x_lens, y, y_lens, bert_feature):
         x = self.ar_text_embedding(x)
@@ -593,6 +594,160 @@ class Text2SemanticDecoder(nn.Module):
         # 错位
         return targets[:, :-1], targets
 
+    def _batch_decode_step_graph(
+        self,
+        y,
+        xy_pos,
+        attn_mask,
+        y_len,
+        prefix_len,
+        early_stop_num,
+        top_k,
+        top_p,
+        repetition_penalty,
+        temperature,
+    ):
+        """CUDA-graph one AR step. KV storage is released before return."""
+        import time
+        t0 = time.perf_counter()
+        xy_dec, k_cache, v_cache = self.t2s_transformer.process_prompt(xy_pos, attn_mask, None)
+        logits = self.ar_predict_layer(xy_dec[:, -1])[:, :-1]
+        samples = sample(
+            logits, y, top_k=top_k, top_p=top_p,
+            repetition_penalty=repetition_penalty, temperature=temperature,
+        )[0]
+        y = torch.concat([y, samples], dim=1)
+        y_emb = self.ar_audio_embedding(y[:, -1:])
+        xy_pos = y_emb * self.ar_audio_position.x_scale + self.ar_audio_position.alpha * self.ar_audio_position.pe[:, y_len].to(dtype=y_emb.dtype, device=y_emb.device)
+
+        src_len = int(k_cache[0].shape[1])
+        bsz = int(k_cache[0].shape[0])
+        hidden = int(k_cache[0].shape[2])
+        limit = int(early_stop_num) if early_stop_num is not None and int(early_stop_num) > 0 else 300
+        max_new = max(32, min(limit, 320))
+        cap = src_len + max_new
+        if cap > 1400:
+            raise RuntimeError(f"seq cap {cap}")
+        # Keep the static KV under ~1.2GB so VITS still fits after this returns.
+        kv_bytes = 2 * len(k_cache) * bsz * cap * hidden * k_cache[0].element_size()
+        if kv_bytes > 2000 * 1024 * 1024:
+            raise RuntimeError(f"kv {kv_bytes/1024**2:.0f}MB")
+
+        device = y.device
+        blocks = self.t2s_blocks
+        Ks, Vs = [], []
+        for kc, vc in zip(k_cache, v_cache):
+            K = kc.new_zeros(bsz, cap, hidden)
+            V = vc.new_zeros(bsz, cap, hidden)
+            K[:, :src_len].copy_(kc)
+            V[:, :src_len].copy_(vc)
+            Ks.append(K)
+            Vs.append(V)
+        prompt_k = k_cache
+        prompt_v = v_cache
+        del k_cache, v_cache, xy_dec
+        blocked = attn_mask[:, 0, -1, :]
+        keep = torch.zeros(bsz, 1, 1, cap, device=device, dtype=torch.bool)
+        keep[:, 0, 0, :src_len] = ~blocked
+        pos = torch.tensor([src_len], device=device, dtype=torch.long)
+        static_x = torch.empty(bsz, 1, hidden, device=device, dtype=xy_pos.dtype)
+        static_out = torch.empty_like(static_x)
+
+        def body():
+            x = static_x
+            for block, K, V in zip(blocks, Ks, Vs):
+                keep.view(bsz, cap).index_fill_(1, pos, True)
+                q, kk, vv = F.linear(x, block.qkv_w, block.qkv_b).chunk(3, dim=-1)
+                K.index_copy_(1, pos, kk.contiguous())
+                V.index_copy_(1, pos, vv.contiguous())
+                head = int(block.num_heads)
+                qq = q.view(bsz, 1, head, -1).transpose(1, 2)
+                attn = F.scaled_dot_product_attention(
+                    qq,
+                    K.view(bsz, cap, head, -1).transpose(1, 2),
+                    V.view(bsz, cap, head, -1).transpose(1, 2),
+                    keep,
+                )
+                attn = attn.transpose(1, 2).reshape(bsz, 1, hidden)
+                x = x + F.linear(attn, block.out_w, block.out_b)
+                x = F.layer_norm(x, [hidden], block.norm_w1, block.norm_b1, float(block.norm_eps1))
+                hidden_ff = F.relu(F.linear(x, block.mlp.w1, block.mlp.b1))
+                x = x + F.linear(hidden_ff, block.mlp.w2, block.mlp.b2)
+                x = F.layer_norm(x, [hidden], block.norm_w2, block.norm_b2, float(block.norm_eps2))
+            static_out.copy_(x)
+
+        def reset_tail():
+            pos.fill_(src_len)
+            keep[:, :, :, src_len:] = False
+            for K, V, kc, vc in zip(Ks, Vs, prompt_k, prompt_v):
+                K[:, src_len:].zero_()
+                V[:, src_len:].zero_()
+                K[:, :src_len].copy_(kc)
+                V[:, :src_len].copy_(vc)
+
+        static_x.copy_(xy_pos)
+        body()
+        torch.cuda.synchronize()
+        reset_tail()
+        graph = torch.cuda.CUDAGraph()
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(stream):
+            graph.capture_begin()
+            body()
+            graph.capture_end()
+        torch.cuda.current_stream().wait_stream(stream)
+        reset_tail()
+        cap_s = time.perf_counter() - t0
+
+        alive = torch.ones(bsz, dtype=torch.bool, device=device)
+        eos_at = torch.full((bsz,), -1, dtype=torch.long, device=device)
+        eos_id = int(self.EOS)
+        last_idx = 0
+        try:
+            for idx in range(1, max_new):
+                static_x.copy_(xy_pos)
+                graph.replay()
+                logits = self.ar_predict_layer(static_out[:, -1])
+                logits_for_sample = logits[:, :-1] if idx < 11 else logits
+                samples = sample(
+                    logits_for_sample, y, top_k=top_k, top_p=top_p,
+                    repetition_penalty=repetition_penalty, temperature=temperature,
+                )[0]
+                y = torch.concat([y, samples], dim=1)
+                last_idx = idx
+                if idx >= 11:
+                    tokens = torch.argmax(logits_for_sample, dim=-1)
+                    eos_row = (samples[:, 0] == eos_id) | (tokens == eos_id)
+                    eos_at = torch.where(eos_row & alive, torch.full_like(eos_at, idx), eos_at)
+                    alive = alive & ~eos_row
+                    if idx % 4 == 0 and not bool(alive.any()):
+                        break
+                if idx + 1 >= max_new:
+                    break
+                y_emb = self.ar_audio_embedding(y[:, -1:])
+                xy_pos = y_emb * self.ar_audio_position.x_scale + self.ar_audio_position.alpha * self.ar_audio_position.pe[:, y_len + idx].to(dtype=y_emb.dtype, device=y_emb.device)
+                pos.add_(1)
+        finally:
+            del graph, Ks, Vs, keep, static_x, static_out, prompt_k, prompt_v
+            torch.cuda.empty_cache()
+
+        still = int(alive.sum().item())
+        if still:
+            raise RuntimeError(f"hit cap {last_idx} with {still}/{bsz} still running")
+        eos_cpu = eos_at.tolist()
+        y_list = [None] * bsz
+        idx_list = [None] * bsz
+        for i, ended in enumerate(eos_cpu):
+            idx_list[i] = int(ended)
+            y_list[i] = y[i, : prefix_len + int(ended)]
+        steps = idx_list
+        print(
+            f"[T2S] step_graph bsz={bsz} src={src_len} steps={min(steps)}..{max(steps)} capture={cap_s:.3f}s",
+            flush=True,
+        )
+        return y_list, idx_list
+
     def infer_panel_batch_infer(
         self,
         x: List[torch.LongTensor],  #####全部文本token
@@ -712,6 +867,23 @@ class Text2SemanticDecoder(nn.Module):
         batch_idx_map = list(range(y.shape[0]))
         idx_list = [None] * y.shape[0]
         quiet = os.environ.get("TQDM_DISABLE", "") in {"1", "true", "True"}
+        _step_graph = os.environ.get("GPT_SOVITS_T2S_STEP_GRAPH", "1").strip().lower() not in {"0", "false", "off", "no"}
+        if _step_graph and xy_pos.is_cuda:
+            try:
+                return self._batch_decode_step_graph(
+                    y=y,
+                    xy_pos=xy_pos,
+                    attn_mask=attn_mask,
+                    y_len=y_len,
+                    prefix_len=prefix_len,
+                    early_stop_num=early_stop_num,
+                    top_k=top_k,
+                    top_p=top_p,
+                    repetition_penalty=repetition_penalty,
+                    temperature=temperature,
+                )
+            except Exception as exc:
+                print(f"[T2S] step graph fallback: {type(exc).__name__}: {exc}", flush=True)
         for idx in tqdm(range(1500), disable=quiet):
             if idx == 0:
                 xy_dec, k_cache, v_cache = self.t2s_transformer.process_prompt(xy_pos, attn_mask, None)

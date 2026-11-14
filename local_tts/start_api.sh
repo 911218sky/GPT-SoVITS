@@ -17,6 +17,8 @@ export NLTK_DATA="$PROJECT_ROOT/.nltk_data:$HOME/nltk_data${NLTK_DATA:+:$NLTK_DA
 export GPT_SOVITS_EMPTY_CACHE="${GPT_SOVITS_EMPTY_CACHE:-1}"
 # 8GB GPU: CUDA Graph static buffers starve VITS. default off; force with CUDAGraph=1.
 export CUDAGraph="${CUDAGraph:-0}"
+# Per-token T2S CUDA graph. Portable across CUDA GPUs. Set 0 to force eager T2S.
+export GPT_SOVITS_T2S_STEP_GRAPH="${GPT_SOVITS_T2S_STEP_GRAPH:-1}"
 # Winning 8GB novel TTS: micro=16 + empty_cache=1 => ~230 chars/s (CUDAGraph must stay 0)
 export GPT_SOVITS_VITS_MICROBATCH="${GPT_SOVITS_VITS_MICROBATCH:-16}"
 export GPT_SOVITS_T2S_MAX_BATCH="${GPT_SOVITS_T2S_MAX_BATCH:-8}"
