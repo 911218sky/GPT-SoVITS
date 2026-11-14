@@ -318,3 +318,7 @@ Source: Bilibili vlog → voice clone role for novels.
 
 If output still flat/noisy: need **more minutes of clean speech**, not higher epochs alone.
 
+
+## TTS speed (this machine)
+
+8GB tuning / regression playbook: [GPT-SoVITS-TTS-Speed-Tuning.md](./GPT-SoVITS-TTS-Speed-Tuning.md)

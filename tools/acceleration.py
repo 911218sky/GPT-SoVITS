@@ -18,11 +18,26 @@ def _cuda_available(device):
     return device.type == "cuda" and torch.cuda.is_available() and torch.version.cuda is not None
 
 
+def _low_vram_gpu(device, threshold_gb=10.0):
+    """RTX 3060 Ti 8GB: CUDA Graph static buffers starve VITS and collapse throughput."""
+    try:
+        props = torch.cuda.get_device_properties(device)
+        return (props.total_memory / (1024 ** 3)) <= float(threshold_gb)
+    except Exception:
+        return False
+
+
 def cuda_graph_available(device):
     device = torch.device(device)
+    # CUDAGraph env: 0=off, 1=force on, unset/auto=on only when >10GB
+    flag = os.environ.get("CUDAGraph", "auto").strip().lower()
+    if flag in {"0", "false", "off", "no"}:
+        return False
+    force_on = flag in {"1", "true", "on", "yes"}
+    if not force_on and _cuda_available(device) and _low_vram_gpu(device):
+        return False
     return bool(
         _cuda_available(device)
-        and os.environ.get("CUDAGraph", "1") != "0"
         and callable(getattr(torch.cuda, "CUDAGraph", None))
         and callable(getattr(torch.cuda, "graph", None))
         and callable(getattr(torch.cuda, "Stream", None))
@@ -75,8 +90,20 @@ def create_acceleration(
     use_flash_attention=True,
     max_seq_length=None,
 ):
-    backend, _ = resolve_acceleration(device, dtype, use_cuda_graph, use_flash_attention)
+    device = torch.device(device)
+    # Forced CUDA Graph on 8GB must stay small or VITS thrashers.
+    if use_cuda_graph and _cuda_available(device) and _low_vram_gpu(device):
+        try:
+            cap = int(os.environ.get("GPT_SOVITS_T2S_MAX_BATCH", "8"))
+        except ValueError:
+            cap = 8
+        max_batch_size = min(int(max_batch_size), max(1, cap))
+    backend, enabled = resolve_acceleration(device, dtype, use_cuda_graph, use_flash_attention)
     if backend is None:
+        if use_cuda_graph:
+            _logger.info(
+                "AR CUDA Graph disabled (low VRAM or unavailable); using ordinary T2S inference"
+            )
         return None
     try:
         from GPT_SoVITS.Accel.adapter import AccelInference
@@ -84,6 +111,12 @@ def create_acceleration(
     except (ImportError, OSError, RuntimeError) as exc:
         _logger.warning("AR acceleration is unavailable; using ordinary inference: %s", exc)
         return None
+    _logger.info(
+        "AR acceleration backend=%s max_batch_size=%s cuda_graph=%s",
+        backend,
+        max_batch_size,
+        enabled,
+    )
     return AccelInference(
         weights_path,
         device=device,

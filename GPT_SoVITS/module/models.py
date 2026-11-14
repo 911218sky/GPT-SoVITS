@@ -1009,14 +1009,25 @@ class SynthesizerTrn(nn.Module):
                     ge = self.prelu(ge)
             return ge
 
+        # Cache speaker/ref embedding across many short fragment decodes.
+        # Per-sentence VITS loops were re-running ref_enc every call (~seconds each).
         if type(refer) == list:
-            ges = []
-            for idx, _refer in enumerate(refer):
-                ge = get_ge(_refer, sv_emb[idx] if self.is_v2pro else None)
-                ges.append(ge)
-            ge = torch.stack(ges, 0).mean(0)
+            cache_key = ("list", tuple(id(r) for r in refer), tuple(id(x) for x in (sv_emb or [])))
         else:
-            ge = get_ge(refer, sv_emb)
+            cache_key = ("tensor", id(refer), id(sv_emb) if sv_emb is not None else None)
+        if getattr(self, "_tts_ge_cache_key", None) == cache_key and getattr(self, "_tts_ge_cache", None) is not None:
+            ge = self._tts_ge_cache
+        else:
+            if type(refer) == list:
+                ges = []
+                for idx, _refer in enumerate(refer):
+                    ge = get_ge(_refer, sv_emb[idx] if self.is_v2pro else None)
+                    ges.append(ge)
+                ge = torch.stack(ges, 0).mean(0)
+            else:
+                ge = get_ge(refer, sv_emb)
+            self._tts_ge_cache = ge
+            self._tts_ge_cache_key = cache_key
 
         y_lengths = torch.LongTensor([codes.size(2) * 2]).to(codes.device)
         text_lengths = torch.LongTensor([text.size(-1)]).to(text.device)

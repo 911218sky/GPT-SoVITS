@@ -346,3 +346,7 @@ cd /home/sky/code/GPT-SoVITS
 - WebUI 啟動失敗：使用 `./local_tts/start_web.sh`，不要用 `local_tts/.venv/bin/python webui.py`。
 - 沒有聲音或音質很差：確認 GPT/SoVITS 是同一次訓練、同一版本，且參考 WAV 與 `prompt_text` 對應。
 - 清理或合併失敗：安裝 `ffmpeg`，再重新執行對應指令。
+
+## TTS 速度調校（8GB）
+
+長篇變慢或要重找最快設定：見 [`../GPT-SoVITS-TTS-Speed-Tuning.md`](../GPT-SoVITS-TTS-Speed-Tuning.md)。

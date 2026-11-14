@@ -133,7 +133,7 @@ def resample(audio_tensor, sr0, sr1, device, match_librosa=False):
 
 def load_audio_gpu(path, target_sr, device, mono=True, dtype=torch.float32, match_librosa=False):
     """Load audio once, then resample and keep the signal on the target device."""
-    audio, source_sr = torchaudio.load(path)
+    audio, source_sr = load_audio(path)
     audio = audio.to(device=device, dtype=dtype)
     if mono and audio.dim() == 2 and audio.shape[0] > 1:
         audio = audio.mean(dim=0, keepdim=True)
@@ -1217,6 +1217,20 @@ class TTS:
         actual_seed = set_seed(seed)
         parallel_infer = inputs.get("parallel_infer", True)
         use_cuda_graph = inputs.get("use_cuda_graph", True)
+        # 8GB: Accel CUDA Graph fills VRAM and makes VITS much slower than pre-Accel path.
+        # Honor CUDAGraph=1; otherwise auto-off when total mem <=10GB.
+        if use_cuda_graph and "cuda" in str(self.configs.device):
+            cg_env = os.environ.get("CUDAGraph", "auto").strip().lower()
+            if cg_env in {"0", "false", "off", "no"}:
+                use_cuda_graph = False
+            elif cg_env not in {"1", "true", "on", "yes"}:
+                try:
+                    total_gb = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                    if total_gb <= 10.0:
+                        print(f"[TTS] CUDA Graph auto-off on {total_gb:.1f}GB GPU (set CUDAGraph=1 to force)")
+                        use_cuda_graph = False
+                except Exception:
+                    pass
         use_flash_attention = inputs.get("use_flash_attention", True)
         repetition_penalty = inputs.get("repetition_penalty", 1.35)
         sample_steps = inputs.get("sample_steps")
@@ -1533,7 +1547,14 @@ class TTS:
                 if not streaming_mode:
                     print(f"############ {i18n('预测语义Token')} ############")
                     accel_batch_size = batch_size if parallel_infer else 1
-                    if self.t2s_accel is not None and self.t2s_accel.max_batch_size != accel_batch_size:
+                    # Keep a large CUDA-graph capacity; only rebuild when request exceeds it.
+                    # Rebuilding on every batch_size change was destroying novel-TTS throughput.
+                    try:
+                        t2s_cap = int(os.environ.get("GPT_SOVITS_T2S_MAX_BATCH", "8"))
+                    except ValueError:
+                        t2s_cap = 64
+                    t2s_cap = max(1, t2s_cap)
+                    if self.t2s_accel is not None and self.t2s_accel.max_batch_size < accel_batch_size:
                         self.t2s_accel.close()
                         self.t2s_accel = None
                     if self.t2s_accel is None:
@@ -1541,7 +1562,7 @@ class TTS:
                             self.configs.t2s_weights_path,
                             device=torch.device(self.configs.device),
                             dtype=self.precision,
-                            max_batch_size=accel_batch_size,
+                            max_batch_size=max(accel_batch_size, t2s_cap),
                             use_cuda_graph=use_cuda_graph,
                             use_flash_attention=use_flash_attention,
                         )
@@ -1604,27 +1625,48 @@ class TTS:
                         if speed_factor == 1.0 and parallel_infer:
                             print(f"{i18n('并行合成中')}...")
                             # ## vits并行推理 method 2
+                            # cut5 produces many short fragments. Concatenating ALL of them into one
+                            # mega-sequence makes VITS dominate wall time (~70%+). Default to
+                            # per-sentence decode; optional micro-concat via env.
                             pred_semantic_list = [item[-idx:] for item, idx in zip(pred_semantic_list, idx_list)]
                             upsample_rate = math.prod(self.vits_model.upsample_rates)
-                            audio_frag_idx = [
-                                pred_semantic_list[i].shape[0] * 2 * upsample_rate
-                                for i in range(0, len(pred_semantic_list))
-                            ]
-                            audio_frag_end_idx = [sum(audio_frag_idx[: i + 1]) for i in range(0, len(audio_frag_idx))]
-                            all_pred_semantic = (
-                                torch.cat(pred_semantic_list).unsqueeze(0).unsqueeze(0).to(self.configs.device)
-                            )
-                            _batch_phones = torch.cat(batch_phones).unsqueeze(0).to(self.configs.device)
-
-                            _batch_audio_fragment = self.vits_model.decode(
-                                    all_pred_semantic, _batch_phones, refer_audio_spec, speed=speed_factor, sv_emb=sv_emb
-                                ).detach()[0, 0, :]
-
-                            audio_frag_end_idx.insert(0, 0)
-                            batch_audio_fragment = [
-                                _batch_audio_fragment[audio_frag_end_idx[i - 1] : audio_frag_end_idx[i]]
-                                for i in range(1, len(audio_frag_end_idx))
-                            ]
+                            try:
+                                vits_micro = int(os.environ.get("GPT_SOVITS_VITS_MICROBATCH", "16"))
+                            except ValueError:
+                                vits_micro = 1
+                            n_frag = len(pred_semantic_list)
+                            if vits_micro <= 0:
+                                vits_micro = n_frag or 1
+                            batch_audio_fragment = []
+                            for start_i in range(0, n_frag, vits_micro):
+                                end_i = min(start_i + vits_micro, n_frag)
+                                sub_sem = pred_semantic_list[start_i:end_i]
+                                sub_phones = batch_phones[start_i:end_i]
+                                if len(sub_sem) == 1:
+                                    phones = sub_phones[0].unsqueeze(0).to(self.configs.device)
+                                    _pred_semantic = sub_sem[0].unsqueeze(0).unsqueeze(0)
+                                    audio_fragment = self.vits_model.decode(
+                                        _pred_semantic, phones, refer_audio_spec, speed=speed_factor, sv_emb=sv_emb
+                                    ).detach()[0, 0, :]
+                                    batch_audio_fragment.append(audio_fragment)
+                                else:
+                                    audio_frag_idx = [
+                                        sub_sem[i].shape[0] * 2 * upsample_rate
+                                        for i in range(0, len(sub_sem))
+                                    ]
+                                    audio_frag_end_idx = [sum(audio_frag_idx[: i + 1]) for i in range(0, len(audio_frag_idx))]
+                                    all_pred_semantic = (
+                                        torch.cat(sub_sem).unsqueeze(0).unsqueeze(0).to(self.configs.device)
+                                    )
+                                    _batch_phones = torch.cat(sub_phones).unsqueeze(0).to(self.configs.device)
+                                    _batch_audio_fragment = self.vits_model.decode(
+                                        all_pred_semantic, _batch_phones, refer_audio_spec, speed=speed_factor, sv_emb=sv_emb
+                                    ).detach()[0, 0, :]
+                                    audio_frag_end_idx.insert(0, 0)
+                                    batch_audio_fragment.extend([
+                                        _batch_audio_fragment[audio_frag_end_idx[i - 1] : audio_frag_end_idx[i]]
+                                        for i in range(1, len(audio_frag_end_idx))
+                                    ])
                         else:
                             # ## vits串行推理
                             for i, idx in enumerate(tqdm(idx_list)):
