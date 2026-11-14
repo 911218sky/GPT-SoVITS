@@ -1,12 +1,19 @@
 # GPT-SoVITS 本機啟動、訓練與小說轉語音
 
-這份文件專門說明 `local_tts` 的實際操作。專案整體資料夾、WebUI 訓練概念與模型管理總覽請先看：
+這份文件專門說明 `local_tts` 的實際操作。
 
-[`../../GPT-SoVITS-操作指南.md`](../../GPT-SoVITS-操作指南.md)
+帶 BGM 錄音→訓練、以及「先問角色再轉小說」的 AI 互動閘門，見：
+
+[`../GPT-SoVITS-AI-Workflow.md`](../GPT-SoVITS-AI-Workflow.md)
+
+環境重裝／驗證：[`../GPT-SoVITS-Environment-Setup.md`](../GPT-SoVITS-Environment-Setup.md)
+專案整體資料夾、WebUI 訓練概念與模型管理總覽請先看：
+
+[`../GPT-SoVITS-Operations-Guide.md`](../GPT-SoVITS-Operations-Guide.md)
 
 換機掃速、最優化想法與本機改動清單：
 
-[`效能優化指南.md`](./效能優化指南.md)
+[`Performance-Guide.md`](./Performance-Guide.md)
 
 以下指令都以 WSL/Linux 的專案根目錄 `/home/sky/code/GPT-SoVITS` 為例。Windows 的 `D:\` 磁碟在 WSL 通常對應 `/mnt/d/`。
 

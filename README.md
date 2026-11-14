@@ -27,6 +27,15 @@ A Powerful Few-shot Voice Conversion and Text-to-Speech WebUI.<br><br>
 
 ---
 
+
+## Local docs (this fork)
+
+- [Environment Setup](./GPT-SoVITS-Environment-Setup.md)
+- [AI Workflow](./GPT-SoVITS-AI-Workflow.md) (BGM cleanup → slice → ASR → train; novel TTS)
+- [Operations Guide](./GPT-SoVITS-Operations-Guide.md)
+- [Performance Guide](./GPT-SoVITS-Performance-Guide.md)
+- [local_tts README](./local_tts/README.md)
+
 ## Features:
 
 1. **Zero-shot TTS:** Input a 5-second vocal sample and experience instant text-to-speech conversion.

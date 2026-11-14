@@ -1,14 +1,23 @@
 # GPT-SoVITS 專案快速操作指南（給人類與 AI）
 
-這是 `/home/sky/code/GPT-SoVITS` 的總覽文件。目標是讓新的 AI 或使用者快速知道：資料放哪裡、如何訓練聲音、如何載入模型，以及如何把 TXT 小說轉成真人男聲音檔。
+這是 `/home/sky/code/GPT-SoVITS` 的總覽文件。
+
+**給後續 AI 的完整互動工作流（帶 BGM 音檔→切分→ASR→訓練；小說→TTS）請優先讀：**
+
+[`GPT-SoVITS-AI-Workflow.md`](./GPT-SoVITS-AI-Workflow.md)
+
+環境安裝／驗證（uv、權重、UVR、檢查清單）：
+
+[`GPT-SoVITS-Environment-Setup.md`](./GPT-SoVITS-Environment-Setup.md)
+目標是讓新的 AI 或使用者快速知道：資料放哪裡、如何訓練聲音、如何載入模型，以及如何把 TXT 小說轉成真人男聲音檔。
 
 詳細的本機批次 TTS 指令請直接閱讀：
 
-[`GPT-SoVITS/local_tts/README.md`](./GPT-SoVITS/local_tts/README.md)
+[`local_tts/README.md`](./local_tts/README.md)
 
 效能參數、掃速換機、最優化想法請看：
 
-[`GPT-SoVITS-效能優化指南.md`](./GPT-SoVITS-效能優化指南.md)
+[`GPT-SoVITS-Performance-Guide.md`](./GPT-SoVITS-Performance-Guide.md)
 
 ## 1. 專案位置與主要資料夾
 
@@ -105,7 +114,7 @@ cd /home/sky/code/GPT-SoVITS
 
 ## 6. 清理、調語速與合併音檔
 
-統一用 **`local_tts/finish_audio.sh`**（需 `ffmpeg`）。詳細參數表見 [`local_tts/README.md`](./GPT-SoVITS/local_tts/README.md)「清理、調速與合併」。
+統一用 **`local_tts/finish_audio.sh`**（需 `ffmpeg`）。詳細參數表見 [`local_tts/README.md`](./local_tts/README.md)「清理、調速與合併」。
 
 ### 6.1 推薦：一條龍（最快，效果同舊三步）
 
@@ -170,7 +179,7 @@ cd /home/sky/code/GPT-SoVITS
 ## 7. AI 快速定位規則
 
 - 要訓練或開 WebUI：看本文件第 3 節，執行 `local_tts/start_web.sh`。
-- 要把 TXT 轉語音：看 [`local_tts/README.md`](./GPT-SoVITS/local_tts/README.md) 的「批次產生音訊」章節。
+- 要把 TXT 轉語音：看 [`local_tts/README.md`](./local_tts/README.md) 的「批次產生音訊」章節。
 - 要找角色模型：看 `local_tts/common.py` 與 `local_tts/assets/`。
 - 要找訓練產物：看 `logs/<實驗名稱>/`。
 - 要處理長篇小說：使用批次工具，不要對單張 GPU 開多個 API worker。

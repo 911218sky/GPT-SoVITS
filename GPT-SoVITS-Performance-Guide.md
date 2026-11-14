@@ -6,7 +6,7 @@
 2. **最優化想法**（為什麼這樣比較快）
 3. 換電腦 / 換顯卡時，如何**自己掃速找出最快參數**並寫回預設
 
-詳細日常操作仍看：[`GPT-SoVITS-操作指南.md`](./GPT-SoVITS-操作指南.md) 與 [`GPT-SoVITS/local_tts/README.md`](./GPT-SoVITS/local_tts/README.md)。
+詳細日常操作仍看：[`GPT-SoVITS-Operations-Guide.md`](./GPT-SoVITS-Operations-Guide.md) 與 [`GPT-SoVITS/local_tts/README.md`](./local_tts/README.md)。
 
 ---
 
@@ -37,7 +37,7 @@
 
 - `GPT-SoVITS/local_tts/README.md`：3060 Ti 建議與「怎麼丟 API」
 - `GPT-SoVITS/AGENTS.md`：同上
-- `GPT-SoVITS-操作指南.md`：OOM 降級順序更新
+- `GPT-SoVITS-Operations-Guide.md`：OOM 降級順序更新
 
 ### C. 量測 / 實驗工具（新增，不影響預設行為）
 
