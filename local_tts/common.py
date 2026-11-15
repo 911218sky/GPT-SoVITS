@@ -55,18 +55,18 @@ ROLE_PROFILES = {
         prompt_text="今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。",
         speed_factor=1.0,
     ),
-    "cintia": RoleProfile(
-        gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "cintia-e15.ckpt",
-        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "cintia_e10_s210.pth",
-        ref_audio_path=DATA_ROOT / "cintia" / "ref.wav",
-        prompt_text="回到九天大堂的时候刚好碰到了高飞和布鲁托远远的跟我们",
-        speed_factor=1.0,
-    ),
     "真人男": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "真人男-e15.ckpt",
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "真人男_e8_s112.pth",
         ref_audio_path=DATA_ROOT / "真人男" / "还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。.wav",
         prompt_text="还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。",
+        speed_factor=1.0,
+    ),
+    "困芽": RoleProfile(
+        gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "困芽-e15.ckpt",
+        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "困芽_e14_s364.pth",
+        ref_audio_path=Path("/home/sky/code/GPT-SoVITS-DATA/困芽/ref.wav"),
+        prompt_text='怎么样愿意和姐姐在一起了吗',
         speed_factor=1.0,
     ),
 }

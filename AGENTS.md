@@ -133,6 +133,8 @@ GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth
 
 在 WebUI 的「預訓練模型路徑」中，`預訓練 GPT 模型`、`預訓練 SoVITS-G 模型` 與左側的訓練版本必須相互對應。訓練 `v2Pro` 時必須使用 `GPT_SoVITS/pretrained_models/s1v3.ckpt`、`GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth`、`GPT_SoVITS/pretrained_models/v2Pro/s2Dv2Pro.pth`，不要留空或混用 v2 的 `s2G2333k.pth`。
 
+SoVITS 每次都訓到第 16 輪，`save_every_epoch=2`，比完高頻再決定留哪一輪。完整做法見 [`GPT-SoVITS-Train-Save.md`](./GPT-SoVITS-Train-Save.md)。GPT 仍是 15 輪。
+
 訓練集格式化一鍵流程的建議順序：
 
 1. 準備 `音檔|說話者|語言|文字` 格式的 `.list` 檔。

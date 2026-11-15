@@ -6,6 +6,8 @@
 
 [`../GPT-SoVITS-AI-Workflow.md`](../GPT-SoVITS-AI-Workflow.md)
 
+v2Pro 訓練固定 SoVITS 16 輪、每 2 輪存檔，再選正式權重：[`../GPT-SoVITS-Train-Save.md`](../GPT-SoVITS-Train-Save.md)
+
 環境重裝／驗證：[`../GPT-SoVITS-Environment-Setup.md`](../GPT-SoVITS-Environment-Setup.md)
 專案整體資料夾、WebUI 訓練概念與模型管理總覽請先看：
 

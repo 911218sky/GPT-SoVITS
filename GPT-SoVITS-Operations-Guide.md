@@ -83,6 +83,8 @@ cd /home/sky/code/GPT-SoVITS
 
 訓練輸出通常在 `GPT-SoVITS/logs/<實驗名稱>/`。訓練 `v2Pro` 時，預訓練 GPT、SoVITS-G/SoVITS-D 與訓練版本必須一致，不要混用 v2、v3 或 v4 權重。
 
+SoVITS 固定訓到第 16 輪、每 2 輪存一次，比完再留正式權重。做法見 [`GPT-SoVITS-Train-Save.md`](./GPT-SoVITS-Train-Save.md)。
+
 ## 4. 將訓練模型登記為角色
 
 把訓練完成的 `.ckpt`、`.pth` 與一段對應的參考 WAV 放入 `local_tts/assets/`。真人男角色目前的設定在 `local_tts/common.py`，預期檔案為：

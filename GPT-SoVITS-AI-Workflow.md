@@ -125,7 +125,7 @@ Dataset length: **5–15 min** clean speech is the practical sweet spot; <5 min 
 Recommend **v2Pro** when using `local_tts` (same family as Hitomi / 真人男).  
 Confirm `exp_name`, then **start only after user says go**.
 
-After train: register role in `local_tts/common.py` + `assets/` (weights + `ref.wav` 3–10 s). Keep **only final** weights (e.g. SoVITS `e8`/`e10` + GPT `e15`); delete mid checkpoints.
+After train: follow [`GPT-SoVITS-Train-Save.md`](./GPT-SoVITS-Train-Save.md). SoVITS always **16 epochs, save every 2**. Pick the epoch whose low / mid-low / mid / high bands match the original reference, not the one with the driest highs alone, then register it in `local_tts/common.py`. Delete losing epoch weights and `G_*.pth` / `D_*.pth` only after that pick. GPT stays **e15**.
 
 ### Q7 — Novel TTS role?
 
@@ -179,14 +179,14 @@ Prefer **re-slice + re-ASR** after UVR (long WhisperX segments are too long for 
 4. Slice to 3–10 s + quality gates (§0.1 Q5 + **§0.2 Audio Quality Guide**)  
 5. WhisperX ASR on clips → `slicer.list`  
 6. User says go → feature prep → SoVITS → GPT (free VRAM between stages)  
-7. Keep final weights only → register `local_tts` role → notify  
+7. SoVITS e2–e16 on disk → pick winner per [`GPT-SoVITS-Train-Save.md`](./GPT-SoVITS-Train-Save.md) → delete losers and G/D → register `local_tts` role → notify  
 
 **Train defaults that worked on RTX 3060 Ti 8GB (`cintia`):**
 
 | Stage | Version | batch_size | epochs | Notes |
 |-------|---------|------------|--------|-------|
-| SoVITS | v2Pro | **4** (safe) / 8 if VRAM free | 8–10 | `mkdir -p logs/<exp>/logs_s2_v2Pro` before train |
-| GPT | v2Pro (`s1v3` init) | **4** | 15 | save every last epoch only if disk tight |
+| SoVITS | v2Pro | **4** | **16**, `save_every_epoch=2` | Keep e2–e16, then pick. See [`GPT-SoVITS-Train-Save.md`](./GPT-SoVITS-Train-Save.md) |
+| GPT | v2Pro (`s1v3` init) | **4** | **15**, save last only | Do not add GPT epochs to fix high-frequency noise |
 
 Feature prep order: `1-get-text` → `2-get-hubert-wav32k` → `2-get-sv` (Pro) → `3-get-semantic`. Clear GPU between stages.
 
