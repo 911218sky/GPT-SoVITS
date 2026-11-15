@@ -15,7 +15,7 @@
 endpoint: `/tts`
 GET:
 ```
-http://127.0.0.1:9880/tts?text=先帝创业未半而中道崩殂，今天下三分，益州疲弊，此诚危急存亡之秋也。&text_lang=zh&ref_audio_path=archive_jingyuan_1.wav&prompt_lang=zh&prompt_text=我是「罗浮」云骑将军景元。不必拘谨，「将军」只是一时的身份，你称呼我景元便可&text_split_method=cut5&batch_size=1&media_type=wav&streaming_mode=true
+http://127.0.0.1:9880/tts?text=先帝创业未半而中道崩殂，今天下三分，益州疲弊，此诚危急存亡之秋也。&text_lang=zh&ref_audio_path=archive_jingyuan_1.wav&prompt_lang=zh&prompt_text=我是「罗浮」云骑将军景元。不必拘谨，「将军」只是一时的身份，你称呼我景元便可&text_split_method=auto&batch_size=1&media_type=wav&streaming_mode=true
 ```
 
 POST:
@@ -30,12 +30,12 @@ POST:
     "top_k": 15,                  # int. top k sampling
     "top_p": 1,                   # float. top p sampling
     "temperature": 1,             # float. temperature for sampling
-    "text_split_method": "cut5",  # str. text split method, see text_segmentation_method.py for details.
+    "text_split_method": "auto",  # str. v2Pro -> cut5, v5turbo -> cut20.
     "batch_size": 1,              # int. batch size for inference
     "batch_threshold": 0.75,      # float. threshold for batch splitting.
     "split_bucket": True,         # bool. whether to split the batch into multiple buckets.
     "speed_factor":1.0,           # float. control the speed of the synthesized audio.
-    "fragment_interval":0.3,      # float. to control the interval of the audio fragment.
+    "fragment_interval":0.0,      # float. seconds of silence after each fragment. 0 = none.
     "seed": -1,                   # int. random seed for reproducibility.
     "parallel_infer": True,       # bool. whether to use parallel inference.
     "repetition_penalty": 1.35,   # float. repetition penalty for T2S model.
@@ -154,6 +154,7 @@ from tools.i18n.i18n import I18nAuto
 from GPT_SoVITS.TTS_infer_pack.TTS import TTS, TTS_Config
 from GPT_SoVITS.TTS_infer_pack.streaming import validate_streaming_options
 from GPT_SoVITS.TTS_infer_pack.text_segmentation_method import get_method_names as get_cut_method_names
+from GPT_SoVITS.TTS_infer_pack.text_segmentation_method import default_split_method
 from pydantic import BaseModel
 import threading
 
@@ -192,12 +193,12 @@ class TTS_Request(BaseModel):
     top_k: int = 15
     top_p: float = 1
     temperature: float = 1
-    text_split_method: str = "cut5"
+    text_split_method: str = "auto"
     batch_size: int = 1
     batch_threshold: float = 0.75
     split_bucket: bool = True
     speed_factor: float = 1.0
-    fragment_interval: float = 0.3
+    fragment_interval: float = 0.0
     seed: int = -1
     media_type: str = "wav"
     streaming_mode: Union[bool, int] = False
@@ -394,7 +395,10 @@ def check_params(req: dict):
     streaming_mode: bool = req.get("streaming_mode", False)
     media_type: str = req.get("media_type", "wav")
     prompt_lang: str = req.get("prompt_lang", "")
-    text_split_method: str = req.get("text_split_method", "cut5")
+    text_split_method: str = req.get("text_split_method") or "auto"
+    if text_split_method == "auto":
+        text_split_method = default_split_method(getattr(tts_config, "version", "v2"))
+        req["text_split_method"] = text_split_method
 
     if ref_audio_path in [None, ""]:
         return JSONResponse(status_code=400, content={"message": "ref_audio_path is required"})
@@ -443,12 +447,12 @@ async def tts_handle(req: dict, raw_streaming_mode=None):
                 "top_k": 15,                  # int. top k sampling
                 "top_p": 1,                   # float. top p sampling
                 "temperature": 1,             # float. temperature for sampling
-                "text_split_method": "cut5",  # str. text split method, see text_segmentation_method.py for details.
+                "text_split_method": "auto",  # str. v2Pro -> cut5, v5turbo -> cut20.
                 "batch_size": 1,              # int. batch size for inference
                 "batch_threshold": 0.75,      # float. threshold for batch splitting.
                 "split_bucket": True,         # bool. whether to split the batch into multiple buckets.
                 "speed_factor":1.0,           # float. control the speed of the synthesized audio.
-                "fragment_interval":0.3,      # float. to control the interval of the audio fragment.
+                "fragment_interval":0.0,      # float. seconds of silence after each fragment. 0 = none.
                 "seed": -1,                   # int. random seed for reproducibility.
                 "parallel_infer": True,       # bool. whether to use parallel inference.
                 "repetition_penalty": 1.35,   # float. repetition penalty for T2S model.
@@ -617,12 +621,12 @@ async def tts_get_endpoint(
     top_k: int = 15,
     top_p: float = 1,
     temperature: float = 1,
-    text_split_method: str = "cut5",
+    text_split_method: str = "auto",
     batch_size: int = 1,
     batch_threshold: float = 0.75,
     split_bucket: bool = True,
     speed_factor: float = 1.0,
-    fragment_interval: float = 0.3,
+    fragment_interval: float = 0.0,
     seed: int = -1,
     media_type: str = "wav",
     parallel_infer: bool = True,

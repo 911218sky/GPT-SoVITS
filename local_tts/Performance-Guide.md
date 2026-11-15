@@ -20,11 +20,12 @@
 |------|------|-------------------------------------|
 | `DEFAULT_MAX_TEXT_LENGTH` | 2400 | **1200** |
 | `DEFAULT_BATCH_SIZE` | 56 | **64** |
-| `DEFAULT_FRAGMENT_INTERVAL` | 0.05 | **0.01** |
+| `DEFAULT_FRAGMENT_INTERVAL` | 0.05，後來 0.01 | **0** |
 
-維持不變（經驗上必要）：
+切段現在是 `auto`，不是寫死的 cut5：v2Pro 用 cut5，v5turbo 用 cut20。
 
-- `split_method=cut5`
+仍然要留著：
+
 - `top_k=15`
 - `split_bucket=True`
 - `parallel_infer=True`
@@ -178,7 +179,7 @@ local_tts/output/_bench_sweep/results.json  # 全部結果
 ```python
 DEFAULT_MAX_TEXT_LENGTH = 1200   # winner.max_text_length
 DEFAULT_BATCH_SIZE = 64          # winner.batch_size
-DEFAULT_FRAGMENT_INTERVAL = 0.01 # winner.fragment_interval
+DEFAULT_FRAGMENT_INTERVAL = 0.0  # novels: do not write a sweep silence back in
 # 若 winner 的 top_k / split_method / batch_threshold 不同，一併改 DEFAULT_*
 ```
 
@@ -191,7 +192,7 @@ DEFAULT_FRAGMENT_INTERVAL = 0.01 # winner.fragment_interval
   --no-set-model \
   --max-text-length 1200 \
   --batch-size 64 \
-  --fragment-interval 0.01 \
+  --fragment-interval 0 \
   --output-dir local_tts/output/my_novel
 ```
 
@@ -275,6 +276,8 @@ GPT_SOVITS_EMPTY_CACHE=1 ./local_tts/start_api.sh --role 真人男
 ```
 
 `batch_tts.sh` 開跑會印「依 N 字/秒預估約需 …」，並在每段後用實測吞吐更新剩餘時間。可用 `--chars-per-sec 328` 覆寫初始預估值。
+
+上表是 2026-09 的 v2 掃速，當時句間還有 0.01 秒。2026-11-15 起小說正式值是 `fragment_interval=0`、`split_method=auto`。
 
 完整掃速表：`GPT-SoVITS/local_tts/output/_bench_sweep/results.json`。
 微優化對照：`GPT-SoVITS/local_tts/output/_bench_micro/`。

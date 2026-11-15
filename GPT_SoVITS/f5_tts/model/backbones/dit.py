@@ -228,6 +228,8 @@ class DiT(nn.Module):
         text = text0.transpose(2, 1)
         mask = (static_cache["mask"] if static_cache is not None
                 else sequence_mask(x_lens, max_length=x.size(1)).to(x.device))
+        if getattr(self, "drop_dense_mask", False) and int(x_lens.min()) == x.size(1):
+            mask = None
 
         batch, seq_len = x.shape[0], x.shape[1]
         if time.ndim == 0:

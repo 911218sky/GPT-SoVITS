@@ -36,7 +36,7 @@ from BigVGAN.bigvgan import BigVGAN
 from feature_extractor.cnhubert import CNHubert
 from module.mel_processing import mel_spectrogram_torch, spectrogram_torch
 from module.models import SynthesizerTrn, SynthesizerTrnV3, Generator
-from module.models_v5 import synthesize_v5_mel, V5_VERSIONS
+from module.models_v5 import synthesize_v5_mel, synthesize_v5_mels, V5_VERSIONS
 from peft import LoraConfig, get_peft_model
 from process_ckpt import get_sovits_version_from_path_fast, load_sovits_new
 from transformers import AutoModelForMaskedLM, AutoTokenizer
@@ -1260,7 +1260,7 @@ class TTS:
                     "batch_threshold": 0.75,      # float. threshold for batch splitting.
                     "split_bucket": True,         # bool. whether to split the batch into multiple buckets.
                     "speed_factor":1.0,           # float. control the speed of the synthesized audio.
-                    "fragment_interval":0.3,      # float. to control the interval of the audio fragment.
+                    "fragment_interval":0.0,      # float. seconds of silence after each fragment. 0 = none.
                     "seed": -1,                   # int. random seed for reproducibility.
                     "parallel_infer": True,       # bool. whether to use parallel inference.
                     "repetition_penalty": 1.35,   # float. repetition penalty for T2S model.
@@ -1293,13 +1293,16 @@ class TTS:
         top_k: int = inputs.get("top_k", 15)
         top_p: float = inputs.get("top_p", 1)
         temperature: float = inputs.get("temperature", 1)
-        text_split_method: str = inputs.get("text_split_method", "cut1")
+        text_split_method: str = inputs.get("text_split_method", "auto")
+        from TTS_infer_pack.text_segmentation_method import default_split_method
+        if text_split_method in ("", "auto"):
+            text_split_method = default_split_method(self.configs.version)
         batch_size = inputs.get("batch_size", 1)
         batch_threshold = inputs.get("batch_threshold", 0.75)
         speed_factor = inputs.get("speed_factor", 1.0)
         split_bucket = inputs.get("split_bucket", True)
         return_fragment = inputs.get("return_fragment", False)
-        fragment_interval = inputs.get("fragment_interval", 0.3)
+        fragment_interval = inputs.get("fragment_interval", 0.0)
         seed = inputs.get("seed", -1)
         seed = -1 if seed in ["", None] else seed
         actual_seed = set_seed(seed)
@@ -1372,10 +1375,6 @@ class TTS:
             split_bucket = False
         else:
             print(i18n("分桶处理模式已关闭"))
-
-        # if fragment_interval < 0.01:
-        #     fragment_interval = 0.01
-        #     print(i18n("分段间隔过小，已自动设置为0.01"))
 
         no_prompt_text = False
         if prompt_text in [None, ""]:
@@ -1961,6 +1960,20 @@ class TTS:
                     yield output_sr, np.zeros(int(output_sr), dtype=np.int16)
                     return
                 t_post0 = time.perf_counter()
+                # Prefetch still groups by length after vocoder mode disables split_bucket.
+                # Without this, clips are concatenated in bucket order instead of story order.
+                if (
+                    phone_prefetch is not None
+                    and batch_index_list
+                    and len(batch_index_list) == len(audio)
+                    and all(len(batch) == len(index_list) for batch, index_list in zip(audio, batch_index_list))
+                ):
+                    split_bucket_post = True
+                    print(
+                        f"[ORDER] restored {sum(len(x) for x in batch_index_list)} clips "
+                        f"first_idx={batch_index_list[0][:4]}",
+                        flush=True,
+                    )
                 processed = self.audio_postprocess(
                     audio,
                     output_sr,
@@ -2026,7 +2039,7 @@ class TTS:
         batch_index_list: list = None,
         speed_factor: float = 1.0,
         split_bucket: bool = True,
-        fragment_interval: float = 0.3,
+        fragment_interval: float = 0.0,
         super_sampling: bool = False,
     ) -> Tuple[int, np.ndarray]:
         if fragment_interval>0:
@@ -2153,6 +2166,75 @@ class TTS:
 
         return audio
 
+
+
+    def _vocode_v5_mels(self, mels):
+        """One vocoder call for a v5 sentence group. v2 never reaches this."""
+        rate = int(self.vocoder_configs["upsample_rate"])
+        if len(mels) == 1:
+            wav = self.vocoder(denorm_spec(mels[0]).to(self.precision))
+            return [wav[0, 0]]
+        lengths = [int(mel.shape[-1]) for mel in mels]
+        width = max(lengths)
+        padded = []
+        for mel, length in zip(mels, lengths):
+            mel = denorm_spec(mel).to(self.precision)
+            if length < width:
+                mel = torch.nn.functional.pad(mel, (0, width - length), mode="replicate")
+            padded.append(mel)
+        wav = self.vocoder(torch.cat(padded, 0))
+        return [wav[index, 0, : length * rate] for index, length in enumerate(lengths)]
+
+    def _synthesize_v5_parallel(
+        self, idx_list, semantic_tokens_list, batch_phones, speed, sample_steps, cfg_rate,
+    ):
+        """Encode the reference once, then run several v5 sentences through one CFM."""
+        prompt_semantic_tokens = self.prompt_cache["prompt_semantic"].unsqueeze(0).unsqueeze(0).to(self.configs.device)
+        prompt_phones = torch.LongTensor(self.prompt_cache["phones"]).unsqueeze(0).to(self.configs.device)
+        raw_entry = self.prompt_cache["refer_spec"][0]
+        if isinstance(raw_entry, tuple):
+            raw_entry = raw_entry[0]
+        refer_audio_spec = raw_entry.to(dtype=self.precision, device=self.configs.device)
+        fea_ref, ge = self.vits_model.decode_encp(prompt_semantic_tokens, prompt_phones, refer_audio_spec)
+        ref_audio = self.prompt_cache["raw_audio"].to(self.configs.device).float()
+        ref_sr = self.prompt_cache["raw_sr"]
+        if ref_audio.shape[0] == 2:
+            ref_audio = ref_audio.mean(0).unsqueeze(0)
+        tgt_sr = 24000 if self.configs.version == "v3" else 32000
+        if ref_sr != tgt_sr:
+            ref_audio = resample(ref_audio, ref_sr, tgt_sr, self.configs.device)
+        mel2 = mel_fn(ref_audio) if self.configs.version == "v3" else mel_fn_v4(ref_audio)
+        mel2 = norm_spec(mel2).to(self.precision)
+        t_enc = time.perf_counter()
+        targets = []
+        for i, idx in enumerate(idx_list):
+            phones = batch_phones[i].unsqueeze(0).to(self.configs.device)
+            semantic_tokens = semantic_tokens_list[i][-idx:].unsqueeze(0).unsqueeze(0)
+            fea_todo, _ = self.vits_model.decode_encp(
+                semantic_tokens, phones, refer_audio_spec, ge, speed,
+            )
+            targets.append(fea_todo)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t_cfm = time.perf_counter()
+        mels = synthesize_v5_mels(
+            self.vits_model, fea_ref, targets, mel2, sample_steps, cfg_rate,
+        )
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t_voc = time.perf_counter()
+        audios = self._vocode_v5_mels(mels)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t_end = time.perf_counter()
+        widths = [int(item.shape[-1]) for item in targets]
+        print(
+            f"[V5] n={len(targets)} enc={t_cfm-t_enc:.3f}s cfm={t_voc-t_cfm:.3f}s "
+            f"voc={t_end-t_voc:.3f}s mel={min(widths)}..{max(widths)}",
+            flush=True,
+        )
+        return audios
+
     def using_vocoder_synthesis_batched_infer(
         self,
         idx_list: List[int],
@@ -2165,14 +2247,18 @@ class TTS:
         sample_steps = (4 if self.configs.version == "v5turbo" else 32) if sample_steps is None else int(sample_steps)
         cfg_rate = (1.30 if self.configs.version == "v5dev" else 0.0) if cfg_rate is None else float(cfg_rate)
         if self.configs.version in V5_VERSIONS:
-            return [
-                self.using_vocoder_synthesis(
-                    semantic_tokens_list[i][-idx:].unsqueeze(0).unsqueeze(0),
-                    batch_phones[i].unsqueeze(0).to(self.configs.device),
-                    speed=speed, sample_steps=sample_steps, cfg_rate=cfg_rate,
-                )
-                for i, idx in enumerate(idx_list)
-            ]
+            # 8GB, cut20: a vocoder group of 48 stays inside the card. batch_tts still sends 64.
+            audios = []
+            step = 48
+            for start in range(0, len(idx_list), step):
+                end = start + step
+                audios.extend(self._synthesize_v5_parallel(
+                    idx_list[start:end],
+                    semantic_tokens_list[start:end],
+                    batch_phones[start:end],
+                    speed, sample_steps, cfg_rate,
+                ))
+            return audios
         prompt_semantic_tokens = self.prompt_cache["prompt_semantic"].unsqueeze(0).unsqueeze(0).to(self.configs.device)
         prompt_phones = torch.LongTensor(self.prompt_cache["phones"]).unsqueeze(0).to(self.configs.device)
         raw_entry = self.prompt_cache["refer_spec"][0]

@@ -22,9 +22,9 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_MAX_TEXT_LENGTH = 1200
 DEFAULT_BATCH_SIZE = 64
 DEFAULT_BATCH_THRESHOLD = 0.75
-DEFAULT_FRAGMENT_INTERVAL = 0.01
+DEFAULT_FRAGMENT_INTERVAL = 0.0
 DEFAULT_REPETITION_PENALTY = 1.35
-DEFAULT_SPLIT_METHOD = "cut5"
+DEFAULT_SPLIT_METHOD = "auto"  # v2Pro -> cut5, v5turbo -> cut20 (~20 chars)
 DEFAULT_TOP_K = 15
 # 真人男、吃神者 3 萬字、empty_cache=0、跑完再清：約 310 字/秒（2026-11-15）
 DEFAULT_CHARS_PER_SEC = 310.0
@@ -210,7 +210,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--max-text-length", type=int, default=DEFAULT_MAX_TEXT_LENGTH)
     parser.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES)
-    parser.add_argument("--split-method", choices=["cut1", "cut2", "cut3", "cut4", "cut5"], default=DEFAULT_SPLIT_METHOD)
+    parser.add_argument("--split-method", choices=["auto", "cut0", "cut1", "cut2", "cut3", "cut4", "cut5", "cut20"], default=DEFAULT_SPLIT_METHOD)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--batch-threshold", type=float, default=DEFAULT_BATCH_THRESHOLD)
     parser.add_argument("--split-bucket", action=argparse.BooleanOptionalAction, default=True)

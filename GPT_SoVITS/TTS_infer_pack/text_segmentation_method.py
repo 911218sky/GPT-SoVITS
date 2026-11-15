@@ -68,14 +68,14 @@ def split_big_text(text, max_len=510):
 
 
 
-def split_for_fast_t2s(text, max_len=20):
-    """Split a clause that would hold a T2S batch for hundreds of steps.
+def split_for_fast_t2s(text, max_len=120):
+    """Split only a run-on that has no punctuation of its own.
 
-    cut5 already breaks on punctuation. What remains can still be a long
-    number-heavy chapter title: about 6 semantic tokens per character, so
-    20 characters stays near the normal 110-step bucket. Shorter sentences
-    are returned unchanged. A tail shorter than 5 characters stays with the
-    previous piece.
+    Punctuation is handled by cut5 or cut20 before this runs. Cutting those
+    groups again every 20 characters restarts the voice on every clause.
+    120 characters still stops a chapter title or a long digit string from
+    holding T2S for hundreds of steps. Shorter text is returned unchanged.
+    A tail shorter than 5 characters stays with the previous piece.
     """
     body = text
     end = ""
@@ -211,6 +211,50 @@ def cut5(inp):
 
     opt = [item for item in mergeitems if not set(item).issubset(punds)]
     return "\n".join(opt)
+
+
+def default_split_method(version: str) -> str:
+    """v5 DiT is faster on ~20-character breaths. v2Pro is faster on cut5."""
+    if str(version).startswith("v5"):
+        return "cut20"
+    return "cut5"
+
+
+def _pack_clauses(inp: str, limit: int) -> str:
+    """Join punctuation clauses until about `limit` characters.
+
+    One clause longer than `limit` is cut every `limit` characters.
+    A tail shorter than 5 characters stays with the previous piece.
+    """
+    inp = inp.strip("\n")
+    clauses = split(inp)
+    pieces = []
+    for clause in clauses:
+        start = 0
+        while start < len(clause):
+            pieces.append(clause[start : start + limit])
+            start += limit
+    opts = []
+    buf = ""
+    for piece in pieces:
+        if buf and len(buf) + len(piece) > limit:
+            opts.append(buf)
+            buf = piece
+        else:
+            buf += piece
+    if buf:
+        opts.append(buf)
+    if len(opts) > 1 and len(opts[-1]) < 5:
+        opts[-2] = opts[-2] + opts[-1]
+        opts = opts[:-1]
+    opts = [item for item in opts if item and not set(item).issubset(punctuation)]
+    return "\n".join(opts)
+
+
+@register_method("cut20")
+def cut20(inp):
+    """About 20 characters a segment. Used by v5turbo."""
+    return _pack_clauses(inp, 20)
 
 
 if __name__ == "__main__":

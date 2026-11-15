@@ -99,7 +99,7 @@ curl -X POST http://127.0.0.1:9880/tts \
     "ref_audio_path": "/home/sky/code/GPT-SoVITS/local_tts/assets/Data/真人男/还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。.wav",
     "prompt_text": "还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。",
     "prompt_lang": "zh",
-    "text_split_method": "cut2",
+    "text_split_method": "auto",
     "media_type": "wav"
   }' --output local_tts/output/test.wav
 ```
@@ -125,7 +125,7 @@ curl -X POST http://127.0.0.1:9880/tts \
 
 ### RTX 3060 Ti 長篇小說建議
 
-`batch_tts.sh` 預設（本機掃速最快組）：每次約 `1200` 字、`cut5`、`batch_size=64`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`、`fragment_interval=0.01`。相對舊預設（2400 字 / batch 56）約快 **30%**。
+`batch_tts.sh` 預設：每次約 `1200` 字、`split_method=auto`（v2Pro 為 cut5，v5turbo 為 cut20）、`batch_size=64`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`、`fragment_interval=0`。v2 相對舊預設（2400 字 / batch 56）約快 **30%**。`fragment_interval` 大於 0 會在每段後面補靜音，小說維持 0。
 
 **怎麼丟 API 最快：**
 1. **只開一個 API、一次只打一個 `/tts` 請求**（做完立刻打下一段）。不要並行多請求，8GB 會搶顯存變慢或 OOM。

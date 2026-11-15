@@ -25,29 +25,36 @@ cd /home/sky/code/GPT-SoVITS
 ./local_tts/start_api.sh --role 真人男
 ```
 
-這四個環境變數已經寫在 `local_tts/start_api.sh`，不要改：
+這些環境變數已經寫在 `local_tts/start_api.sh`，不要改：
 
 | 變數 | 值 | 原因 |
 |---|---|---|
 | `CUDAGraph` | `0` | 舊的整段圖會吃滿 8GB，速度掉到每秒幾十個字 |
 | `GPT_SOVITS_T2S_STEP_GRAPH` | `1` | 語意 token 用逐步圖，算完就放掉 |
-| `GPT_SOVITS_VITS_MICROBATCH` | `16` | 聲學一次最多合 16 句 |
+| `GPT_SOVITS_VITS_MICROBATCH` | `16` | v2Pro 聲學一次最多合 16 句。v5 不走這條 |
 | `GPT_SOVITS_EMPTY_CACHE` | `0` | 推理途中不收記憶體。整批結束再清一次 |
+| `GPT_SOVITS_V5_CFM_BATCH` | `24` | v5turbo 一次送進 CFM 的句數 |
+| `GPT_SOVITS_V5_REF_FRAMES` | `160` | v5 參考梅爾只留最後 160 幀（1.6 秒） |
 
-批次維持：每次約 1200 字、`cut5`、`batch_size=64`、分桶開、平行推理開、`speed_factor=1.0`。語速要變慢就在轉完後用 `finish_audio.sh`，不要在推理時改語速，否則分桶會關掉。
+批次預設在 `local_tts/batch_tts.py`：每次約 1200 字、`split_method=auto`、`batch_size=64`、`fragment_interval=0`、分桶開、平行推理開、`speed_factor=1.0`。語速要變慢就在轉完後用 `finish_audio.sh`。推理時改語速會關掉分桶。
 
-字/秒看文章，不看模型名。乾淨的稿可以到大約 300–360 字/秒。章節標題和數字很多的稿（吃神者 4827 字）大約 **300 字/秒、16 秒**。比這慢很多時，先看 log 裡的 `[TTS_TIMING]`，不要先換模型。
+`auto` 看目前載入的模型。v2Pro 用 `cut5`（遇標點就切）。v5turbo 用 `cut20`（標點子句收到大約 20 字）。同一段《吃神者》前 3000 字、句間不補靜音：v2Pro 約 **258 字/秒**，v5turbo 約 **98 字/秒**。v5 再切短會變慢；收到 30 字幾乎沒差；收到 40 字會在 batch 48 爆顯存。細節在第 12 節。
+
+`fragment_interval=0` 表示每一段合成完不再在尾巴接一段全 0 的取樣。這個參數的作用是換氣，上游預設 0.3 秒。小說不要這段空白。程式只在值大於 0 時才接。
+
+v2Pro 乾淨稿大約 300–360 字/秒。章節標題很多的吃神者 4827 字，熱跑大約 304 字/秒。比這慢很多時，先看 log 裡的 `[TTS_TIMING]`。
 
 平常不用再改的程式：
 
 | 做什麼 | 在哪 |
 |---|---|
-| 超過 20 字才再切一句 | `text_segmentation_method.py` 的 `split_for_fast_t2s` |
+| v2 用 cut5、v5 用 cut20 | `default_split_method`、`cut20` |
+| 沒有標點而且長過 120 字才硬切 | `split_for_fast_t2s` |
+| v5 多句一起跑 CFM，聲碼器最多 48 句 | `synthesize_v5_mels`、`using_vocoder_synthesis_batched_infer` |
 | 長句不要讓整桶重跑 | `t2s_model.py` 的 `_batch_decode_step_graph` |
 | 下一桶注音跟聲學一起做 | `TTS.py` 的 `_PhoneBucketPrefetcher` |
-| 依句子長短分桶 | `TTS.plan_length_buckets` |
 
-轉完小說要關掉 API，把顯存讓出來。下面從第 0 節起是測量紀錄和除錯。若數字和第 0 節衝突，以這一節為準。
+轉完小說要關掉 API，把顯存讓出來。下面從第 0 節起是較早的測量。和第 12 節衝突時，以這一節和第 12 節為準。
 
 ---
 
@@ -74,9 +81,9 @@ export CUDAGraph=0
 export GPT_SOVITS_T2S_STEP_GRAPH=1
 export GPT_SOVITS_VITS_MICROBATCH=16
 export GPT_SOVITS_EMPTY_CACHE=0
-# 小說批次：
+# 這組註解是當天早上的 v2Pro 測量。現在的請求預設見「接手先看」：auto、fragment_interval=0。
 # cut5, max_text_length=1200, batch_size=64, split_bucket=True, parallel_infer=True
-# fragment_interval=0.01, top_k=15, speed_factor=1.0
+# top_k=15, speed_factor=1.0
 ```
 
 已寫進 `local_tts/start_api.sh` 預設。啟動：
@@ -233,12 +240,14 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 | 參數 | 值 |
 |---|---|
 | `max_text_length` | 1200 |
-| `text_split_method` | cut5 |
-| `batch_size` | 64 |
+| `text_split_method` | auto（v2Pro 為 cut5，v5turbo 為 cut20） |
+| `batch_size` | 64（v5 聲碼器內部再以 48 句一組） |
 | `split_bucket` | True |
 | `parallel_infer` | True |
-| `fragment_interval` | 0.01 |
+| `fragment_interval` | 0 |
 | `top_k` | 15 |
+
+下面的速度列是 v2Pro、`cut5`、句間仍為 0.01 秒時量到的。0.01 秒不進模型，所以那些字/秒仍然描述 v2。現在小說不再補這段靜音。
 
 **實測（cintia，1200 字，2026-11-14）：**
 
@@ -273,7 +282,7 @@ echo $!
 
 ### 5.2 最小測速（熱跑為準）
 
-對 `POST http://127.0.0.1:9880/tts` 送與 `batch_tts` 相同欄位的 JSON（`cut5`、`batch_size=64`、`parallel_infer=true`、`fragment_interval=0.01`、`use_cuda_graph=false`）。  
+對 `POST http://127.0.0.1:9880/tts` 送與 `batch_tts` 相同欄位的 JSON（`text_split_method=auto`、`batch_size=64`、`parallel_infer=true`、`fragment_interval=0`、`use_cuda_graph=false`）。  
 同一 `1200` 字跑 **cold + warm×2**，看 `/tmp/tts_bench/timing.log`。
 
 目標：**warm `total` ≤ 6s（1200 字）⇒ ≥ 200 字/秒**。
@@ -350,6 +359,7 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 應回到 ~200MiB �
 | 2026-11-14 | 診斷 Accel/CUDA Graph 為主因；ge_cache + microbatch；鎖定 `CUDAGraph=0`、`MICROBATCH=16`、`EMPTY_CACHE=1`；熱身實測 ~230–240 字/秒 |
 | 2026-11-15 | 加上逐步 CUDA Graph（`GPT_SOVITS_T2S_STEP_GRAPH`）。1200 字 292 字/秒，5000 字 359 字/秒。舊靜態圖維持關閉 |
 | 2026-11-15 | 長句不再拖垮整桶：超過 20 字再切、未完成的句子單獨續跑。注音依長度分桶，並在 VITS 期間準備下一桶。吃神者 4827 字從約 106–192 字/秒回到 300 字/秒以上 |
+| 2026-11-15 | 小說不再補句間靜音（`fragment_interval=0`）。v2Pro 維持 cut5，v5turbo 用 cut20，CFM 一次 24 句。吃神者 3000 字：v2 約 258 字/秒，v5 約 98 字/秒 |
 
 ---
 
@@ -381,11 +391,11 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 
 | 參數 | 起步值 | 原因 |
 |---|---|---|
-| `text_split_method` | `cut5` | `cut2` 會明顯變慢 |
-| `batch_size` | `64` | 8 這種小批次會把 T2S 拆碎 |
+| `text_split_method` | `auto` | v2Pro 落到 `cut5`。v2 用 `cut2` 會明顯變慢。v5turbo 落到 `cut20` |
+| `batch_size` | `64` | 8 這種小批次會把 T2S 拆碎。v5 聲碼器內部以 48 句一組 |
 | `split_bucket` | 開 | 長度相近的句子才放同一桶 |
 | `parallel_infer` | 開 | 關掉大約只剩每秒幾十個字 |
-| `fragment_interval` | `0.01` | 句間靜音，不影響模型 |
+| `fragment_interval` | `0` | 大於 0 會在每段後面補靜音。小說維持 0 |
 | `top_k` | `15` | 與目前模型訓練設定一致 |
 | `speed_factor` | `1.0` | 不是 1 會關掉分桶 |
 
@@ -409,7 +419,7 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 
 
 
-## 11. 吃神者長文：為什麼會掉到 100 多字/秒，以及現在的做法
+## 11. 吃神者長文：為什麼會掉到 100 多字/秒，以及當時的做法
 
 角色困芽、v2Pro、fp16、參考音已快取。同一份《吃神者》前 4827 字。
 
@@ -426,9 +436,22 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 
 做法，由外到內：
 
-1. **超過 20 字才再切。** `split_for_fast_t2s`。中文大約 6 個語意 token 一個字，20 字落在逐步圖最順的 110 步附近。短句不切。標點仍然先照 `cut5`。
+1. **當時是超過 20 字就再切。** 後來改成只切沒有標點、長過 120 字的段落（`split_for_fast_t2s`）。每個子句都再切一次會讓聲音重起。v2 的標點切分仍是 `cut5`。v5 的大約 20 字是另一個切法 `cut20`，見第 12 節。
 2. **一桶裡只有長句還沒結束時，不要整桶重來。** `_batch_decode_step_graph` 回傳已完成的列。只剩一句就把 token 上限從 320 放到 1024，繼續走逐步圖。
 3. **注音跟聲學重疊，不跟語意 token 重疊。** 分桶只用正規化後的字數，這一步很短。G2PW 也在 GPU 上，若在 T2S 擷取 CUDA graph 時同時跑，graph 會失效。所以下一桶注音是在這一桶 T2S 結束、VITS 開始時才啟動。
 4. **環境維持鎖定值：** `CUDAGraph=0`、`GPT_SOVITS_T2S_STEP_GRAPH=1`、`GPT_SOVITS_VITS_MICROBATCH=16`、`GPT_SOVITS_EMPTY_CACHE=0`、`batch_size=64`、`split_bucket=True`。`pipeline_prefetch` 預設開；分段或串流模式會關掉。
 
 程式入口：`text_segmentation_method.split_for_fast_t2s`、`Text2SemanticDecoder._batch_decode_step_graph`、`TTS.plan_length_buckets`、`_PhoneBucketPrefetcher`。
+
+## 12. 句間不補靜音，v5 用大約 20 字
+
+同一段《吃神者》前 3000 字，`fragment_interval=0`，參考音已熱身。2026-11-15 晚。
+
+| 模型 | 切段 | batch | 生成 | 速度 | 音檔長度 |
+|---|---|---:|---:|---:|---:|
+| v2Pro | cut5 | 64 | 11.64 秒 | 257.7 字/秒 | 768 秒 |
+| v5turbo | cut20 | 48 | 30.72 秒 | 97.6 字/秒 | 714 秒 |
+
+v5turbo 在 batch 48 下改每段字數：10 字 72.1 字/秒，15 字 92.4，20 字 97.6，30 字 96.7。40 字在 batch 48 聲碼器爆顯存，降到 batch 32 是 89.0 字/秒。v5 因此維持 cut20。
+
+`audio_postprocess` 只在 `fragment_interval > 0` 時，才在每一段後面接 `sampling_rate * fragment_interval` 個 0。上游預設 0.3 秒，用來讓分開合成的句子中間有一段換氣。API、`batch_tts` 和 `audio_postprocess` 的小說預設都是 0。`_set_prompt_semantic` 裡參考音後面的 0.3 秒只給 HuBERT 抽音色，不會寫進輸出。
