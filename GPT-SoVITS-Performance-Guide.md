@@ -47,7 +47,9 @@
 | `local_tts/bench_overlap.py` + `bench_overlap.sh` | 對照 text 預取、TTS∥清音 |
 | `local_tts/output/_bench_sweep/winner.json` | 本機上次掃速的最快參數 |
 
-### D. 實驗功能（預設關閉，一般轉小說不用開）
+### D. 注音預取（已經是預設）
+
+下一桶的注音會在上一桶做聲學時準備。不要在語意 token 還在擷取 CUDA graph 時同時跑，否則那一桶會變慢。分段回傳和串流模式會自動關掉。
 
 | 改動 | 說明 | 結論 |
 |------|------|------|

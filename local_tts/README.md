@@ -351,4 +351,4 @@ cd /home/sky/code/GPT-SoVITS
 
 ## TTS 速度調校（8GB）
 
-長篇變慢或要重找最快設定：見 [`../GPT-SoVITS-TTS-Speed-Tuning.md`](../GPT-SoVITS-TTS-Speed-Tuning.md)。
+長篇變慢或要接手這台機器：先看 [`../GPT-SoVITS-TTS-Speed-Tuning.md`](../GPT-SoVITS-TTS-Speed-Tuning.md) 最上面的「接手先看」。現在的速度大約是乾淨稿 300–360 字/秒，章節標題很多的稿大約 300 字/秒。不要改 `start_api.sh` 裡那四個環境變數。

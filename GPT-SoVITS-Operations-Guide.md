@@ -117,7 +117,7 @@ cd /home/sky/code/GPT-SoVITS
   --output-dir "local_tts/output/罪名不朽_310_真人男"
 ```
 
-輸出會是一組編號 WAV。中斷後重新執行相同指令即可續跑，已存在的編號檔會跳過。單張 GPU 不要同時執行多個批次工作。預設批次參數見 [Performance Guide](./GPT-SoVITS-Performance-Guide.md)（約 1200 字/段、`batch_size=64` 為常見 8GB 設定）。CUDA OOM 時依序嘗試 `--batch-size 56`、`48`、`40`。
+輸出會是一組編號 WAV。中斷後重新執行相同指令即可續跑，已存在的編號檔會跳過。單張 GPU 不要同時執行多個批次工作。現在這台機器怎麼跑才快，見 [速度調校](./GPT-SoVITS-TTS-Speed-Tuning.md) 的「接手先看」。預設批次參數見 [Performance Guide](./GPT-SoVITS-Performance-Guide.md)（約 1200 字/段、`batch_size=64` 為常見 8GB 設定）。CUDA OOM 時依序嘗試 `--batch-size 56`、`48`、`40`。
 
 ## 6. 清理、調語速與合併音檔
 

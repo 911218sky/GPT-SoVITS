@@ -194,6 +194,8 @@ Feature prep order: `1-get-text` → `2-get-hubert-wav32k` → `2-get-sv` (Pro) 
 
 ## 3. Workflow B — Novel TTS (use existing scripts)
 
+速度沿用 `GPT-SoVITS-TTS-Speed-Tuning.md` 的「接手先看」。不要把 `CUDAGraph` 打開，也不要為了追數字關掉逐步圖。
+
 **Do not invent a new TTS path.** Use:
 
 ```bash

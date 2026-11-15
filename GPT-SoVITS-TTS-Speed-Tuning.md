@@ -16,6 +16,42 @@
 
 ---
 
+## 接手先看
+
+本機是 RTX 3060 Ti 8GB，WSL。一次只開一個 API：
+
+```bash
+cd /home/sky/code/GPT-SoVITS
+./local_tts/start_api.sh --role 真人男
+```
+
+這四個環境變數已經寫在 `local_tts/start_api.sh`，不要改：
+
+| 變數 | 值 | 原因 |
+|---|---|---|
+| `CUDAGraph` | `0` | 舊的整段圖會吃滿 8GB，速度掉到每秒幾十個字 |
+| `GPT_SOVITS_T2S_STEP_GRAPH` | `1` | 語意 token 用逐步圖，算完就放掉 |
+| `GPT_SOVITS_VITS_MICROBATCH` | `16` | 聲學一次最多合 16 句 |
+| `GPT_SOVITS_EMPTY_CACHE` | `0` | 推理途中不收記憶體。整批結束再清一次 |
+
+批次維持：每次約 1200 字、`cut5`、`batch_size=64`、分桶開、平行推理開、`speed_factor=1.0`。語速要變慢就在轉完後用 `finish_audio.sh`，不要在推理時改語速，否則分桶會關掉。
+
+字/秒看文章，不看模型名。乾淨的稿可以到大約 300–360 字/秒。章節標題和數字很多的稿（吃神者 4827 字）大約 **300 字/秒、16 秒**。比這慢很多時，先看 log 裡的 `[TTS_TIMING]`，不要先換模型。
+
+平常不用再改的程式：
+
+| 做什麼 | 在哪 |
+|---|---|
+| 超過 20 字才再切一句 | `text_segmentation_method.py` 的 `split_for_fast_t2s` |
+| 長句不要讓整桶重跑 | `t2s_model.py` 的 `_batch_decode_step_graph` |
+| 下一桶注音跟聲學一起做 | `TTS.py` 的 `_PhoneBucketPrefetcher` |
+| 依句子長短分桶 | `TTS.plan_length_buckets` |
+
+轉完小說要關掉 API，把顯存讓出來。下面從第 0 節起是測量紀錄和除錯。若數字和第 0 節衝突，以這一節為準。
+
+---
+
+
 ## 0. 一句話結論（2026-11-15 實測）
 
 慢的主因仍是舊的 **Accel 靜態 CUDA Graph** 在 8GB 上把顯存吃滿。那個開關繼續關。
@@ -31,11 +67,13 @@
 
 顯存峰值約 6.8GB，閒置約 3.5GB。
 
+上表是比較乾淨的 cintia 稿。有章節標題和大量數字時不會到 359，吃神者那種稿大約 300 字/秒，見第 11 節。
+
 ```bash
 export CUDAGraph=0
 export GPT_SOVITS_T2S_STEP_GRAPH=1
 export GPT_SOVITS_VITS_MICROBATCH=16
-export GPT_SOVITS_EMPTY_CACHE=1
+export GPT_SOVITS_EMPTY_CACHE=0
 # 小說批次：
 # cut5, max_text_length=1200, batch_size=64, split_bucket=True, parallel_infer=True
 # fragment_interval=0.01, top_k=15, speed_factor=1.0
@@ -64,7 +102,7 @@ nvidia-smi --query-compute-apps=pid --format=csv,noheader
 |---|---|---|
 | `db790e44…`（約 2026-09） | **沒有** `tools/acceleration.py` / Accel CUDA Graph | 小說轉換快（使用者記憶 ~200+ 字/秒） |
 | `bf8c5a3`（2026-11-14 merge） | 併入 CUDA Graph、`GPT_SoVITS/Accel/**`，`TTS.py` 大改 | 預設開 Graph → 顯存 ~7.5/8GB → **20–40 字/秒** |
-| 本次修復後 | Graph 關 + VITS micro=16 + 每請求 empty_cache | 熱身 **~230–240 字/秒** |
+| 2026-11-14 | 還沒有逐步圖。Graph 關、micro=16、每請求清記憶體 | 熱身約 230–240 字/秒 |
 
 查某個 commit 有沒有 Accel：
 
@@ -211,7 +249,7 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 | Graph 關 + micro=0（整段） | ~150–165 但不穩 | 熱跑顯存頂高 |
 | Graph 關 + micro=16 + empty=1 | ~230–240 | 2026-11-14，尚無逐步圖 |
 | **逐步圖開 + 同上** | **292（1200 字）／359（5000 字）** | **2026-11-15 採用** |
-| **逐步圖 + `EMPTY_CACHE=0` + 跑完再清** | **310（真人男 3 萬字，1 分 35 秒）** | **目前預設** |
+| 逐步圖 + 途中不清記憶體 | 真人男 3 萬字約 310 字/秒；吃神者 4827 字約 304 字/秒 | 目前就是這組設定。文章不同，數字不同 |
 
 ---
 
@@ -289,7 +327,7 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 應回到 ~200MiB �
   └─ 掃 MICROBATCH + EMPTY_CACHE，鎖定 warm 最高者
 速度 ≥ 200？
   └─ 確認 log 有 `[T2S] step_graph` 而沒有 `step graph fallback`
-     1200 字熱身約 290、5000 字約 360 才算吃到逐步圖
+     乾淨稿 1200 字約 290、5000 字約 360。有章節標題的小說約 300 也算正常
 ```
 
 ---
