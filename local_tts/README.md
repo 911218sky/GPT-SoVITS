@@ -125,11 +125,11 @@ curl -X POST http://127.0.0.1:9880/tts \
 
 ### RTX 3060 Ti 長篇小說建議
 
-`batch_tts.sh` 預設：每次約 `1200` 字、`split_method=auto`（v2Pro 為 cut5，v5turbo 為 cut20）、`batch_size=64`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`、`fragment_interval=0`。v2 相對舊預設（2400 字 / batch 56）約快 **30%**。`fragment_interval` 大於 0 會在每段後面補靜音，小說維持 0。
+`batch_tts.sh` 預設：每次約 `5000` 字、`split_method=auto`（v2Pro 為 cut5，v5turbo 為 cut20）、`batch_size=64`、`split_bucket=True`、`parallel_infer=True`、`top_k=15`、`fragment_interval=0`。`fragment_interval` 大於 0 會在每段後面補靜音，小說維持 0。
 
 **怎麼丟 API 最快：**
 1. **只開一個 API、一次只打一個 `/tts` 請求**（做完立刻打下一段）。不要並行多請求，8GB 會搶顯存變慢或 OOM。
-2. **每段約 1200 字 + `batch_size=64`**：讓單次請求內塞滿句批次，又不要把整段拉太長拖垮顯存。
+2. **每段約 5000 字 + `batch_size=64`**：一次請求攤掉文本前處理；再切成 1200 字會把整本拉回 250 字/秒附近。
 3. 保持 `split_bucket=True`、`parallel_infer=True`、`speed_factor=1.0`（非 1.0 會關 bucket）。
 4. 清音／調速可邊轉邊做（CPU）；不要為此再開第二條 TTS。
 

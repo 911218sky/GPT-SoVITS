@@ -214,7 +214,7 @@ DEFAULT_FRAGMENT_INTERVAL = 0.0  # novels: do not write a sweep silence back in
 
 本機結論參考：
 
-- 注音跟 VITS 重疊：吃神者 5000 字約從 302 到 306 字/秒，已是預設
+- 注音跟 VITS 重疊已是預設
 - TTS∥清音：約 +12% 總牆鐘（清音佔比小時收益有限，長篇清音重時更明顯）
 
 ---

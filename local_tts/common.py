@@ -5,7 +5,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASSET_ROOT = Path(__file__).resolve().parent / "assets"
-MODEL_ROOT = ASSET_ROOT
+MODEL_ROOT = PROJECT_ROOT
 DATA_ROOT = ASSET_ROOT / "Data"
 
 
@@ -44,27 +44,28 @@ ROLE_PROFILES = {
     "Sesame": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "Sesame-e15.ckpt",
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "Sesame_e8_s144.pth",
-        ref_audio_path=DATA_ROOT / "Sesame" / "因为我的朋友跟我说，他这里还是显示只有互关的朋友才能评论。.wav",
-        prompt_text="因为我的朋友跟我说，他这里还是显示只有互关的朋友才能评论。",
+        ref_audio_path=DATA_ROOT / "Sesame" / "因为我的朋友跟我说，他這裡還是顯示只有互關的朋友才能評論。.wav",
+        prompt_text="因為我的朋友跟我說，他這裡還是顯示只有互關的朋友才能評論。",
         speed_factor=0.9,
     ),
     "Hitomi": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "Hitomi-e15.ckpt",
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "Hitomi_e8_s224.pth",
-        ref_audio_path=DATA_ROOT / "Hitomi" / "今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。.wav",
-        prompt_text="今天晚上有那个哎公司厨艺争霸战，感觉会很有趣。在阿基的台。",
+        ref_audio_path=DATA_ROOT / "Hitomi" / "今天晚上有那個哎公司廚藝爭霸戰，感覺會很有趣。在阿基的台。.wav",
+        prompt_text="今天晚上有那個哎公司廚藝爭霸戰，感覺會很有趣。在阿基的台。",
         speed_factor=1.0,
     ),
     "真人男": RoleProfile(
         gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "真人男-e15.ckpt",
         sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "真人男_e8_s112.pth",
-        ref_audio_path=DATA_ROOT / "真人男" / "还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。.wav",
-        prompt_text="还是你来吧，我突然间觉得好像也没有那么迫切的想要脱单了。",
+        ref_audio_path=DATA_ROOT / "真人男" / "还是你来吧，我突然間覺得好像也沒有那麼迫切的想要脫單了。.wav",
+        prompt_text="還是你來吧，我突然間覺得好像也沒有那麼迫切的想要脫單了。",
         speed_factor=1.0,
     ),
-    "困芽": RoleProfile(
-        gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "困芽-e15.ckpt",
-        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "困芽_e14_s364.pth",
+        prompt_text='怎么样愿意和姐姐在一起了吗',
+        speed_factor=1.0,
+    ),
+        sovits_weights_path=Path("/home/sky/code/GPT-SoVITS/GPT_SoVITS/pretrained_models/gsv-v5-pretrained/s2Gv5turbo.pth"),
         ref_audio_path=Path("/home/sky/code/GPT-SoVITS-DATA/困芽/ref.wav"),
         prompt_text='怎么样愿意和姐姐在一起了吗',
         speed_factor=1.0,

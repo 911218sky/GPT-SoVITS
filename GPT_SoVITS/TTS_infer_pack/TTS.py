@@ -1638,6 +1638,13 @@ class TTS:
                 if not streaming_mode:
                     print(f"############ {i18n('预测语义Token')} ############")
                     accel_batch_size = batch_size if parallel_infer else 1
+                    # v5 diffusion already holds a mel batch. Keep its T2S slice smaller than v2.
+                    if str(getattr(self.configs, "version", "")) in {"v5dev", "v5turbo"}:
+                        try:
+                            v5_t2s = int(os.environ.get("GPT_SOVITS_V5_T2S_BATCH", "32"))
+                        except ValueError:
+                            v5_t2s = 32
+                        accel_batch_size = min(accel_batch_size, max(1, v5_t2s))
                     # Keep a large CUDA-graph capacity; only rebuild when request exceeds it.
                     # Rebuilding on every batch_size change was destroying novel-TTS throughput.
                     try:
@@ -1645,6 +1652,8 @@ class TTS:
                     except ValueError:
                         t2s_cap = 64
                     t2s_cap = max(1, t2s_cap)
+                    if str(getattr(self.configs, "version", "")) in {"v5dev", "v5turbo"}:
+                        t2s_cap = min(t2s_cap, accel_batch_size)
                     if self.t2s_accel is not None and self.t2s_accel.max_batch_size < accel_batch_size:
                         self.t2s_accel.close()
                         self.t2s_accel = None

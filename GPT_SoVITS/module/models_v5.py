@@ -90,7 +90,7 @@ def synthesize_v5_mel(model, reference_features, target_features, reference_mel,
 
 def _v5_cfm_batch():
     try:
-        return max(1, int(os.environ.get("GPT_SOVITS_V5_CFM_BATCH", "24")))
+        return max(1, int(os.environ.get("GPT_SOVITS_V5_CFM_BATCH", "16")))
     except ValueError:
         return 16
 

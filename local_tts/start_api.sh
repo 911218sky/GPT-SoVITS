@@ -23,8 +23,9 @@ export GPT_SOVITS_T2S_STEP_GRAPH="${GPT_SOVITS_T2S_STEP_GRAPH:-1}"
 # Winning 8GB novel TTS: step graph + micro=16 + empty_cache=0, release once at end.
 export GPT_SOVITS_VITS_MICROBATCH="${GPT_SOVITS_VITS_MICROBATCH:-16}"
 export GPT_SOVITS_T2S_MAX_BATCH="${GPT_SOVITS_T2S_MAX_BATCH:-8}"
-# v5turbo on 8GB. CFM groups of 24; keep the last 1.6s of the reference mel.
-export GPT_SOVITS_V5_CFM_BATCH="${GPT_SOVITS_V5_CFM_BATCH:-24}"
+# v5turbo on 8GB. CFM groups of 16 and T2S slices of 32; keep the last 1.6s of the reference mel.
+export GPT_SOVITS_V5_CFM_BATCH="${GPT_SOVITS_V5_CFM_BATCH:-16}"
+export GPT_SOVITS_V5_T2S_BATCH="${GPT_SOVITS_V5_T2S_BATCH:-32}"
 export GPT_SOVITS_V5_REF_FRAMES="${GPT_SOVITS_V5_REF_FRAMES:-160}"
 export TQDM_DISABLE="${TQDM_DISABLE:-1}"
 cd "$PROJECT_ROOT"
