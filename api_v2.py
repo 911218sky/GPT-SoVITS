@@ -216,7 +216,7 @@ class TTS_Request(BaseModel):
     super_sampling: bool = False
     overlap_length: int = 2
     min_chunk_length: int = 16
-    pipeline_prefetch: bool = False
+    pipeline_prefetch: bool = True
     gpt_streaming: bool = False
     streaming_chunk_seconds: float = 2.0
     streaming_window_mode: str = "fixed"

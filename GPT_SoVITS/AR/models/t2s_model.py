@@ -606,6 +606,7 @@ class Text2SemanticDecoder(nn.Module):
         top_p,
         repetition_penalty,
         temperature,
+        token_cap=320,
     ):
         """CUDA-graph one AR step. KV storage is released before return."""
         import time
@@ -624,7 +625,7 @@ class Text2SemanticDecoder(nn.Module):
         bsz = int(k_cache[0].shape[0])
         hidden = int(k_cache[0].shape[2])
         limit = int(early_stop_num) if early_stop_num is not None and int(early_stop_num) > 0 else 300
-        max_new = max(32, min(limit, 320))
+        max_new = max(32, min(limit, int(token_cap)))
         cap = src_len + max_new
         if cap > 1400:
             raise RuntimeError(f"seq cap {cap}")
@@ -721,7 +722,12 @@ class Text2SemanticDecoder(nn.Module):
                     eos_row = (samples[:, 0] == eos_id) | (tokens == eos_id)
                     eos_at = torch.where(eos_row & alive, torch.full_like(eos_at, idx), eos_at)
                     alive = alive & ~eos_row
-                    if idx % 4 == 0 and not bool(alive.any()):
+                    n_alive = int(alive.sum().item())
+                    if idx % 4 == 0 and n_alive == 0:
+                        break
+                    # Full-batch graph stays on the 320-token fast path.
+                    # Only a sentence that outlives a normal bucket is split out.
+                    if bsz > 1 and idx >= 160 and idx % 4 == 0 and n_alive <= 1:
                         break
                 if idx + 1 >= max_new:
                     break
@@ -732,21 +738,23 @@ class Text2SemanticDecoder(nn.Module):
             del graph, Ks, Vs, keep, static_x, static_out, prompt_k, prompt_v
             torch.cuda.empty_cache()
 
-        still = int(alive.sum().item())
-        if still:
-            raise RuntimeError(f"hit cap {last_idx} with {still}/{bsz} still running")
         eos_cpu = eos_at.tolist()
         y_list = [None] * bsz
         idx_list = [None] * bsz
+        alive_idx = torch.where(alive)[0].tolist()
+        alive_set = set(alive_idx)
         for i, ended in enumerate(eos_cpu):
+            if i in alive_set or int(ended) < 0:
+                continue
             idx_list[i] = int(ended)
             y_list[i] = y[i, : prefix_len + int(ended)]
-        steps = idx_list
-        print(
-            f"[T2S] step_graph bsz={bsz} src={src_len} steps={min(steps)}..{max(steps)} capture={cap_s:.3f}s",
-            flush=True,
-        )
-        return y_list, idx_list
+        if not alive_idx:
+            steps = idx_list
+            print(
+                f"[T2S] step_graph bsz={bsz} src={src_len} steps={min(steps)}..{max(steps)} capture={cap_s:.3f}s",
+                flush=True,
+            )
+        return y_list, idx_list, alive_idx
 
     def infer_panel_batch_infer(
         self,
@@ -868,9 +876,11 @@ class Text2SemanticDecoder(nn.Module):
         idx_list = [None] * y.shape[0]
         quiet = os.environ.get("TQDM_DISABLE", "") in {"1", "true", "True"}
         _step_graph = os.environ.get("GPT_SOVITS_T2S_STEP_GRAPH", "1").strip().lower() not in {"0", "false", "off", "no"}
-        if _step_graph and xy_pos.is_cuda:
+        token_cap = 320
+        graph_done = False
+        while _step_graph and xy_pos.is_cuda and not graph_done:
             try:
-                return self._batch_decode_step_graph(
+                sub_y, sub_idx, alive_idx = self._batch_decode_step_graph(
                     y=y,
                     xy_pos=xy_pos,
                     attn_mask=attn_mask,
@@ -881,9 +891,34 @@ class Text2SemanticDecoder(nn.Module):
                     top_p=top_p,
                     repetition_penalty=repetition_penalty,
                     temperature=temperature,
+                    token_cap=token_cap,
                 )
             except Exception as exc:
                 print(f"[T2S] step graph fallback: {type(exc).__name__}: {exc}", flush=True)
+                break
+            for local_i, batch_index in enumerate(batch_idx_map):
+                if sub_idx[local_i] is None:
+                    continue
+                y_list[batch_index] = sub_y[local_i]
+                idx_list[batch_index] = sub_idx[local_i]
+            if not alive_idx:
+                graph_done = True
+                break
+            index = torch.tensor(alive_idx, device=y.device, dtype=torch.long)
+            y = torch.index_select(y, 0, index)
+            xy_pos = torch.index_select(xy_pos, 0, index)
+            attn_mask = torch.index_select(attn_mask, 0, index)
+            batch_idx_map = [batch_idx_map[i] for i in alive_idx]
+            # One long sentence gets a higher cap. Several leftovers fall through
+            # to the eager loop instead of holding the whole bucket.
+            if len(alive_idx) == 1 and token_cap < 1024:
+                token_cap = 1024
+                continue
+            break
+        if graph_done:
+            if ref_free:
+                return y_list, [0] * x.shape[0]
+            return y_list, idx_list
         for idx in tqdm(range(1500), disable=quiet):
             if idx == 0:
                 xy_dec, k_cache, v_cache = self.t2s_transformer.process_prompt(xy_pos, attn_mask, None)

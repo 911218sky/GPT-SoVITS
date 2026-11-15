@@ -51,15 +51,15 @@
 
 | 改動 | 說明 | 結論 |
 |------|------|------|
-| `TTS_infer_pack/TTS.py` 的 `pipeline_prefetch` | T2S 時預取下一段 text/BERT | 幾乎沒贏（BERT 也佔 GPU） |
-| `api_v2.py` 增加 `pipeline_prefetch: bool = False` | 給上面用的請求欄位 | 預設關 |
+| 長度分桶後的注音預取 | 下一桶注音跟上一桶 VITS 重疊，不在 T2S 擷取 CUDA graph 時跑 | 預設開。細節見 `GPT-SoVITS-TTS-Speed-Tuning.md` 第 11 節 |
+| `api_v2.py` 的 `pipeline_prefetch` | 單次請求可關掉 | **預設開** |
 | `batch_tts.py` 每段 `client_wall` log | 方便看每段耗時 | 不影響速度 |
 
 ### E. 沒有當成預設的做法（刻意不做）
 
 - **不要**同時開兩個 API / 兩個 `batch_tts` 搶同一張 GPU
 - **不要**為了「餵滿 GPU」同時跑兩路 T2S，或硬做 T2S∥VITS（8GB 上收益小、易 OOM）
-- text 預取、雙流推理：**實驗過，不划算**
+- 舊的逐句 BERT 預取不划算。現在改為依句子長度分桶，注音只跟 VITS 重疊
 
 ---
 
@@ -74,7 +74,7 @@ text/BERT（約 15–20%）→ T2S（約 50–55%）→ VITS（約 10%）→ 後
 ```
 
 - **T2S** 是自回歸，本來就很難把 GPU 利用率拉到訓練那種滿載，這是模型特性。
-- **BERT 也在 GPU**，所以「一邊 T2S、一邊預取 BERT」會搶卡，牆鐘幾乎不贏。
+- BERT 和 G2PW 都在 GPU 上，所以注音不跟 T2S 一起跑，只跟 VITS 重疊。
 - **VITS 只佔約一成**，T2S∥VITS 流水線工程大、8GB 還可能要砍 batch，總吞吐常沒比較好。
 
 ### 2. 正確的「餵滿」方式
@@ -211,7 +211,7 @@ DEFAULT_FRAGMENT_INTERVAL = 0.01 # winner.fragment_interval
 
 本機結論參考：
 
-- text/BERT 預取：約 +5%，不值得當預設
+- 注音跟 VITS 重疊：吃神者 5000 字約從 302 到 306 字/秒，已是預設
 - TTS∥清音：約 +12% 總牆鐘（清音佔比小時收益有限，長篇清音重時更明顯）
 
 ---

@@ -12,10 +12,10 @@ import torch
 from text.LangSegmenter import LangSegmenter
 from text import chinese
 from typing import Dict, List, Optional, Tuple
-from text.cleaner import clean_text
+from text.cleaner import clean_text, normalize_text
 from text import cleaned_text_to_sequence
 from transformers import AutoModelForMaskedLM, AutoTokenizer
-from TTS_infer_pack.text_segmentation_method import split_big_text, splits, get_method as get_seg_method
+from TTS_infer_pack.text_segmentation_method import split_big_text, split_for_fast_t2s, splits, get_method as get_seg_method
 
 from tools.i18n.i18n import I18nAuto, scan_language_list
 
@@ -63,37 +63,54 @@ class TextPreprocessor:
         print(f"############ {i18n('切分文本')} ############")
         text = self.replace_consecutive_punctuation(text)
         texts = self.pre_seg_text(text, lang, text_split_method)
-        result = []
+        if not texts:
+            return []
         print(f"############ {i18n('提取文本Bert特征')} ############")
+        prepared = self.collect_phone_segments_batch(texts, lang, version)
+        return self.features_from_segments(prepared)
 
-        prepared: List[Optional[List[Tuple[list, list, str, str]]]] = []
+    def normalized_char_length(self, text: str, language: str, version: str) -> int:
+        """Length used by length bucketing. Skips g2p."""
+        text = re.sub(r" {2,}", " ", text)
+        textlist, langlist = self._split_lang_segments(text, language)
+        total = 0
+        for piece, lang in zip(textlist, langlist):
+            total += len(normalize_text(piece, lang.replace("all_", ""), version))
+        return total
+
+    def collect_phone_segments_batch(self, texts: List[str], lang: str, version: str):
+        """Phonemize one group of sentences."""
+        return [self._collect_phone_segments(text_item, lang, version) for text_item in texts]
+
+    def features_from_segments(
+        self, prepared: List[Optional[List[Tuple[list, list, str, str]]]]
+    ) -> List[Dict]:
+        """Batched Chinese BERT for segments already prepared on CPU."""
+        result = []
         zh_norm_texts: List[str] = []
         zh_word2phs: List[list] = []
         zh_refs: List[Tuple[int, int]] = []
 
         with self.bert_lock:
-            for text_item in texts:
-                segments = self._collect_phone_segments(text_item, lang, version)
-                if segments is None:
-                    prepared.append(None)
+            for text_idx, segments in enumerate(prepared):
+                if not segments:
                     continue
-                prepared.append(segments)
                 for seg_idx, (_phones, word2ph, norm_text, seg_lang) in enumerate(segments):
                     if seg_lang.replace("all_", "") == "zh":
-                        zh_refs.append((len(prepared) - 1, seg_idx))
+                        zh_refs.append((text_idx, seg_idx))
                         zh_norm_texts.append(norm_text)
                         zh_word2phs.append(word2ph)
 
             zh_features: List[torch.Tensor] = []
             batch_size = max(1, BERT_FEATURE_BATCH_SIZE)
-            for start in tqdm(range(0, len(zh_norm_texts), batch_size), desc="BERT"):
+            for start in range(0, len(zh_norm_texts), batch_size):
                 end = start + batch_size
                 zh_features.extend(self.get_bert_feature_batch(zh_norm_texts[start:end], zh_word2phs[start:end]))
 
             feature_map = {ref: feat for ref, feat in zip(zh_refs, zh_features)}
 
             for text_idx, segments in enumerate(prepared):
-                if segments is None:
+                if not segments:
                     continue
                 phones_list: List[list] = []
                 bert_list: List[torch.Tensor] = []
@@ -159,10 +176,11 @@ class TextPreprocessor:
                 text += "。" if lang != "en" else "."
 
             # 解决句子过长导致Bert报错的问题
-            if len(text) > 510:
-                texts.extend(split_big_text(text))
-            else:
-                texts.append(text)
+            for piece in split_for_fast_t2s(text):
+                if len(piece) > 510:
+                    texts.extend(split_big_text(piece))
+                else:
+                    texts.append(piece)
 
         print(i18n("实际输入的目标文本(切句后):"))
         print(texts)

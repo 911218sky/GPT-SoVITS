@@ -18,23 +18,49 @@ special = [
 ]
 
 
+
+def language_module_map(version):
+    if version == "v1":
+        return {"zh": "chinese", "ja": "japanese", "en": "english"}
+    return {
+        "zh": "chinese2",
+        "ja": "japanese",
+        "en": "english",
+        "ko": "korean",
+        "yue": "cantonese",
+    }
+
+
+def normalize_text(text, language, version=None):
+    """Same text normalization as clean_text, without g2p."""
+    if version is None:
+        version = os.environ.get("version", "v2")
+    language = language.replace("all_", "")
+    mapping = language_module_map(version)
+    if language not in mapping:
+        return " "
+    module = __import__("text." + mapping[language], fromlist=[mapping[language]])
+    if hasattr(module, "text_normalize"):
+        return module.text_normalize(text)
+    return text
+
+
 def clean_text(text, language, version=None):
     if version is None:
         version = os.environ.get("version", "v2")
     if version == "v1":
         symbols = symbols_v1.symbols
-        language_module_map = {"zh": "chinese", "ja": "japanese", "en": "english"}
     else:
         symbols = symbols_v2.symbols
-        language_module_map = {"zh": "chinese2", "ja": "japanese", "en": "english", "ko": "korean", "yue": "cantonese"}
+    module_map = language_module_map(version)
 
-    if language not in language_module_map:
+    if language not in module_map:
         language = "en"
         text = " "
     for special_s, special_l, target_symbol in special:
         if special_s in text and language == special_l:
             return clean_special(text, language, special_s, target_symbol, version)
-    language_module = __import__("text." + language_module_map[language], fromlist=[language_module_map[language]])
+    language_module = __import__("text." + module_map[language], fromlist=[module_map[language]])
     if hasattr(language_module, "text_normalize"):
         norm_text = language_module.text_normalize(text)
     else:
@@ -60,16 +86,15 @@ def clean_special(text, language, special_s, target_symbol, version=None):
         version = os.environ.get("version", "v2")
     if version == "v1":
         symbols = symbols_v1.symbols
-        language_module_map = {"zh": "chinese", "ja": "japanese", "en": "english"}
     else:
         symbols = symbols_v2.symbols
-        language_module_map = {"zh": "chinese2", "ja": "japanese", "en": "english", "ko": "korean", "yue": "cantonese"}
+    module_map = language_module_map(version)
 
     """
     特殊静音段sp符号处理
     """
     text = text.replace(special_s, ",")
-    language_module = __import__("text." + language_module_map[language], fromlist=[language_module_map[language]])
+    language_module = __import__("text." + module_map[language], fromlist=[module_map[language]])
     norm_text = language_module.text_normalize(text)
     phones = language_module.g2p(norm_text)
     new_ph = []

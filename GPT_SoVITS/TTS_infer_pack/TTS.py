@@ -12,6 +12,9 @@ from tqdm import tqdm
 
 from audio_compat import AudioResample, load_audio
 
+# Empty unless update_version() has selected v5dev/v5turbo.
+_v5_resample_version = {"name": ""}
+
 now_dir = os.getcwd()
 sys.path.append(now_dir)
 import os
@@ -125,15 +128,24 @@ def resample(audio_tensor, sr0, sr1, device, match_librosa=False):
             )
         return out
     global resample_transform_dict
-    key = "%s-%s-%s" % (sr0, sr1, str(device))
+    use_upstream = _v5_resample_version["name"] in V5_VERSIONS
+    key = "%s-%s-%s-%s" % ("ta" if use_upstream else "sf", sr0, sr1, str(device))
     if key not in resample_transform_dict:
-        resample_transform_dict[key] = AudioResample(sr0, sr1).to(device)
+        if use_upstream:
+            import torchaudio
+            resample_transform_dict[key] = torchaudio.transforms.Resample(sr0, sr1).to(device)
+        else:
+            resample_transform_dict[key] = AudioResample(sr0, sr1).to(device)
     return resample_transform_dict[key](audio_tensor)
 
 
 def load_audio_gpu(path, target_sr, device, mono=True, dtype=torch.float32, match_librosa=False):
     """Load audio once, then resample and keep the signal on the target device."""
-    audio, source_sr = load_audio(path)
+    if _v5_resample_version["name"] in V5_VERSIONS:
+        import torchaudio
+        audio, source_sr = torchaudio.load(path)
+    else:
+        audio, source_sr = load_audio(path)
     audio = audio.to(device=device, dtype=dtype)
     if mono and audio.dim() == 2 and audio.shape[0] > 1:
         audio = audio.mean(dim=0, keepdim=True)
@@ -433,6 +445,8 @@ class TTS_Config:
         version = self.configs.get("version", None)
         self.version = version
         assert self.version in ["v1", "v2", "v3", "v4", "v5dev", "v5turbo", "v2Pro", "v2ProPlus"], "Invalid version!"
+        # Set before any reference load. Only v5dev/v5turbo switch to upstream torchaudio.
+        _v5_resample_version["name"] = self.version
         self.t2s_weights_path = self.configs.get("t2s_weights_path", None)
         self.vits_weights_path = self.configs.get("vits_weights_path", None)
         self.bert_base_path = self.configs.get("bert_base_path", None)
@@ -501,6 +515,8 @@ class TTS_Config:
     def update_version(self, version: str) -> None:
         self.version = version
         self.languages = self.v1_languages if self.version == "v1" else self.v2_languages
+        # V5 reference load/resample follows upstream torchaudio. Other versions keep audio_compat.
+        _v5_resample_version["name"] = version
 
     def __str__(self):
         self.configs = self.update_configs()
@@ -518,6 +534,67 @@ class TTS_Config:
 
     def __eq__(self, other):
         return isinstance(other, TTS_Config) and self.configs_path == other.configs_path
+
+
+
+
+def _pipeline_prefetch_enabled(inputs, return_fragment, streaming_mode) -> bool:
+    if return_fragment or streaming_mode:
+        return False
+    if "pipeline_prefetch" in inputs:
+        return bool(inputs.get("pipeline_prefetch"))
+    env = os.environ.get("GPT_SOVITS_PIPELINE_PREFETCH", "1").strip().lower()
+    return env not in {"0", "false", "off", "no"}
+
+
+class _PhoneBucketPrefetcher:
+    """Phonemize the next length-bucket while VITS is running.
+
+    G2PW is an ONNX GPU model. It must not run during T2S CUDA-graph capture,
+    so the next bucket is started only after the current bucket's T2S returns.
+    """
+
+    def __init__(self, preprocessor, texts, buckets, lang, version):
+        self.preprocessor = preprocessor
+        self.texts = texts
+        self.buckets = buckets
+        self.lang = lang
+        self.version = version
+        self.cursor = 0
+        self.future = None
+        self.cpu_seconds = 0.0
+        self.wait_seconds = 0.0
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="tts-phones")
+
+    def start_next(self):
+        if self.future is not None or self._pool is None or self.cursor >= len(self.buckets):
+            return
+        self.future = self._pool.submit(self._phonemize, self.buckets[self.cursor])
+
+    def _phonemize(self, indices):
+        started = time.perf_counter()
+        prepared = self.preprocessor.collect_phone_segments_batch(
+            [self.texts[index] for index in indices], self.lang, self.version
+        )
+        return prepared, time.perf_counter() - started
+
+    def take(self):
+        if self.future is None:
+            return None
+        waited = time.perf_counter()
+        prepared, elapsed = self.future.result()
+        self.wait_seconds += time.perf_counter() - waited
+        self.cpu_seconds += elapsed
+        self.future = None
+        indices = self.buckets[self.cursor]
+        self.cursor += 1
+        return indices, prepared
+
+    def close(self):
+        pool = self._pool
+        self._pool = None
+        if pool is not None:
+            pool.shutdown(wait=True, cancel_futures=True)
 
 
 class TTS:
@@ -889,7 +966,11 @@ class TTS:
         self.prompt_cache["sv_embs"] = None
 
     def _get_ref_spec(self, ref_audio_path):
-        raw_audio, raw_sr = load_audio(ref_audio_path)
+        if _v5_resample_version["name"] in V5_VERSIONS:
+            import torchaudio
+            raw_audio, raw_sr = torchaudio.load(ref_audio_path)
+        else:
+            raw_audio, raw_sr = load_audio(ref_audio_path)
         raw_audio = raw_audio.to(self.configs.device).float()
         self.prompt_cache["raw_audio"] = raw_audio
         self.prompt_cache["raw_sr"] = raw_sr
@@ -974,6 +1055,30 @@ class TTS:
         batch = torch.stack(padded_sequences)
         return batch
 
+
+    @staticmethod
+    def plan_length_buckets(lengths, batch_size: int, threshold: float):
+        """Same length buckets as to_batch. Short sentences stay with short sentences."""
+        if not lengths:
+            return []
+        index_and_len = sorted(([idx, int(length)] for idx, length in enumerate(lengths)), key=lambda item: item[1])
+        index_and_len = np.array(index_and_len, dtype=np.int64)
+        batch_index_list = []
+        pos = 0
+        batch_size = max(1, int(batch_size))
+        total = index_and_len.shape[0]
+        while pos < total:
+            pos_end = min(pos + batch_size, total)
+            while pos < pos_end:
+                batch = index_and_len[pos:pos_end, 1].astype(np.float32)
+                score = batch[(pos_end - pos) // 2] / (batch.mean() + 1e-8)
+                if (score >= threshold) or (pos_end - pos == 1):
+                    batch_index_list.append(index_and_len[pos:pos_end, 0].tolist())
+                    pos = pos_end
+                    break
+                pos_end -= 1
+        return batch_index_list
+
     def to_batch(
         self,
         data: list,
@@ -992,26 +1097,9 @@ class TTS:
 
         batch_index_list = []
         if split_bucket:
-            index_and_len_list.sort(key=lambda x: x[1])
-            index_and_len_list = np.array(index_and_len_list, dtype=np.int64)
-
-            batch_index_list_len = 0
-            pos = 0
-            while pos < index_and_len_list.shape[0]:
-                # batch_index_list.append(index_and_len_list[pos:min(pos+batch_size,len(index_and_len_list))])
-                pos_end = min(pos + batch_size, index_and_len_list.shape[0])
-                while pos < pos_end:
-                    batch = index_and_len_list[pos:pos_end, 1].astype(np.float32)
-                    score = batch[(pos_end - pos) // 2] / (batch.mean() + 1e-8)
-                    if (score >= threshold) or (pos_end - pos == 1):
-                        batch_index = index_and_len_list[pos:pos_end, 0].tolist()
-                        batch_index_list_len += len(batch_index)
-                        batch_index_list.append(batch_index)
-                        pos = pos_end
-                        break
-                    pos_end = pos_end - 1
-
-            assert batch_index_list_len == len(data)
+            lengths = [len(item["norm_text"]) for item in data]
+            batch_index_list = self.plan_length_buckets(lengths, batch_size, threshold)
+            assert sum(len(bucket) for bucket in batch_index_list) == len(data)
 
         else:
             for i in range(len(data)):
@@ -1349,61 +1437,65 @@ class TTS:
         ###### text preprocessing ########
         t1 = time.perf_counter()
         data: list = None
-        pipeline_prefetch = bool(inputs.get("pipeline_prefetch", False))
-        if pipeline_prefetch and (return_fragment or streaming_mode):
+        phone_prefetch = None
+        if (return_fragment or streaming_mode) and inputs.get("pipeline_prefetch"):
             print(i18n("pipeline_prefetch 不支援分段/流式模式，已自動關閉"))
-            pipeline_prefetch = False
-
-        if not (return_fragment or streaming_mode) and pipeline_prefetch:
-            # Lazy BERT per sentence-group; prefetch next group while current group runs T2S/VITS.
+        pipeline_prefetch = _pipeline_prefetch_enabled(inputs, return_fragment, streaming_mode)
+        if pipeline_prefetch:
             print(i18n("文本预取流水线已开启"))
             texts = self.text_preprocessor.pre_seg_text(text, text_lang, text_split_method)
             if len(texts) == 0:
                 yield 16000, np.zeros(int(16000), dtype=np.int16)
                 return
-            text_groups = [texts[i : i + batch_size] for i in range(0, len(texts), batch_size)]
+            lengths = [
+                self.text_preprocessor.normalized_char_length(piece, text_lang, self.configs.version)
+                for piece in texts
+            ]
+            planned = self.plan_length_buckets(lengths, batch_size, batch_threshold)
             prompt_data = self.prompt_cache if not no_prompt_text else None
+            phone_prefetch = _PhoneBucketPrefetcher(
+                self.text_preprocessor, texts, planned, text_lang, self.configs.version
+            )
+            batch_index_list = []
 
-            def make_group_batches(batch_texts: list):
-                batch_data = []
-                for piece in batch_texts:
-                    phones, bert_features, norm_text = self.text_preprocessor.segment_and_extract_feature_for_text(
-                        piece, text_lang, self.configs.version
-                    )
-                    if phones is None:
-                        continue
-                    batch_data.append(
-                        {
-                            "phones": phones,
-                            "bert_features": bert_features,
-                            "norm_text": norm_text,
-                        }
-                    )
-                if not batch_data:
-                    return [], []
-                return self.to_batch(
-                    batch_data,
-                    prompt_data=prompt_data,
-                    batch_size=batch_size,
-                    threshold=batch_threshold,
-                    split_bucket=split_bucket,
-                    device=self.configs.device,
-                    precision=self.precision,
-                )
-
-            def iter_prefetched_items():
-                with ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(make_group_batches, text_groups[0])
-                    for group_index, _group in enumerate(text_groups):
-                        group_batches, group_index_list = future.result()
-                        if group_index + 1 < len(text_groups):
-                            future = pool.submit(make_group_batches, text_groups[group_index + 1])
-                        if not group_batches:
+            def iter_length_buckets():
+                try:
+                    phone_prefetch.start_next()
+                    while True:
+                        item = phone_prefetch.take()
+                        if item is None:
+                            break
+                        indices, prepared = item
+                        kept = [(index, segments) for index, segments in zip(indices, prepared) if segments]
+                        if not kept:
+                            phone_prefetch.start_next()
                             continue
-                        yield group_batches, group_index_list
+                        kept_idx = [index for index, _segments in kept]
+                        batch_data = self.text_preprocessor.features_from_segments(
+                            [segments for _index, segments in kept]
+                        )
+                        if not batch_data:
+                            phone_prefetch.start_next()
+                            continue
+                        if len(batch_data) != len(kept_idx):
+                            kept_idx = kept_idx[: len(batch_data)]
+                        batches, _local = self.to_batch(
+                            batch_data,
+                            prompt_data=prompt_data,
+                            batch_size=max(1, len(batch_data)),
+                            threshold=batch_threshold,
+                            split_bucket=False,
+                            device=self.configs.device,
+                            precision=self.precision,
+                        )
+                        for batch in batches:
+                            batch_index_list.append(kept_idx)
+                            yield batch
+                        phone_prefetch.start_next()
+                finally:
+                    phone_prefetch.close()
 
-            data = ("__prefetch__", iter_prefetched_items())
-            batch_index_list = None
+            data = iter_length_buckets()
         elif not (return_fragment or streaming_mode):
             data = self.text_preprocessor.preprocess(text, text_lang, text_split_method, self.configs.version)
             if len(data) == 0:
@@ -1604,6 +1696,8 @@ class TTS:
                         )
                     t4 = time.perf_counter()
                     t_34 += t4 - t_before_t2s
+                    if phone_prefetch is not None:
+                        phone_prefetch.start_next()
 
 
                     batch_audio_fragment = []
@@ -1828,7 +1922,7 @@ class TTS:
                 t_45 += t5 - t4
                 if return_fragment:
                     emit_tts_timing(
-                        f"[TTS_TIMING] bucket ref={t1 - t0:.3f}s text={t2 - t1:.3f}s "
+                        f"[TTS_TIMING] bucket ref={t1 - t0:.3f}s text={t2 - t1:.3f}s text_cpu={(phone_prefetch.cpu_seconds if phone_prefetch else 0.0):.3f}s text_wait={(phone_prefetch.wait_seconds if phone_prefetch else 0.0):.3f}s "
                         f"bucket_prep={t_before_t2s - t3:.3f}s t2s={t4 - t_before_t2s:.3f}s "
                         f"vits={t5 - t4:.3f}s"
                     )
@@ -1860,9 +1954,9 @@ class TTS:
             if not (return_fragment or streaming_mode):
                 if len(audio) == 0 or (prefetch_mode and len(ordered_fragments) == 0):
                     emit_tts_timing(
-                        f"[TTS_TIMING] ref={t1 - t0:.3f}s text={t2 - t1:.3f}s "
+                        f"[TTS_TIMING] ref={t1 - t0:.3f}s text={t2 - t1:.3f}s text_cpu={(phone_prefetch.cpu_seconds if phone_prefetch else 0.0):.3f}s text_wait={(phone_prefetch.wait_seconds if phone_prefetch else 0.0):.3f}s "
                         f"bucket_prep={t_bucket_prep:.3f}s t2s={t_34:.3f}s vits={t_45:.3f}s "
-                        f"post=0.000s total={time.perf_counter() - t0:.3f}s prefetch={int(prefetch_mode)}"
+                        f"post=0.000s total={time.perf_counter() - t0:.3f}s prefetch={int(prefetch_mode or phone_prefetch is not None)}"
                     )
                     yield output_sr, np.zeros(int(output_sr), dtype=np.int16)
                     return
@@ -1878,9 +1972,9 @@ class TTS:
                 )
                 t_post1 = time.perf_counter()
                 emit_tts_timing(
-                    f"[TTS_TIMING] ref={t1 - t0:.3f}s text={t2 - t1:.3f}s "
+                    f"[TTS_TIMING] ref={t1 - t0:.3f}s text={t2 - t1:.3f}s text_cpu={(phone_prefetch.cpu_seconds if phone_prefetch else 0.0):.3f}s text_wait={(phone_prefetch.wait_seconds if phone_prefetch else 0.0):.3f}s "
                     f"bucket_prep={t_bucket_prep:.3f}s t2s={t_34:.3f}s vits={t_45:.3f}s "
-                    f"post={t_post1 - t_post0:.3f}s total={t_post1 - t0:.3f}s prefetch={int(prefetch_mode)}"
+                    f"post={t_post1 - t_post0:.3f}s total={t_post1 - t0:.3f}s prefetch={int(prefetch_mode or phone_prefetch is not None)}"
                 )
                 yield processed
 
@@ -1897,6 +1991,8 @@ class TTS:
             self.init_vits_weights(self.configs.vits_weights_path)
             raise e
         finally:
+            if phone_prefetch is not None:
+                phone_prefetch.close()
             # empty_cache 會 CUDA sync，每請求都做會變慢；完全不做則長跑碎片累積、吃到共享顯存。
             # GPT_SOVITS_EMPTY_CACHE：0=從不，1=每請求，N=每 N 次請求（預設 1，最穩）。
             self._infer_count += 1

@@ -67,6 +67,35 @@ def split_big_text(text, max_len=510):
     return result
 
 
+
+def split_for_fast_t2s(text, max_len=20):
+    """Split a clause that would hold a T2S batch for hundreds of steps.
+
+    cut5 already breaks on punctuation. What remains can still be a long
+    number-heavy chapter title: about 6 semantic tokens per character, so
+    20 characters stays near the normal 110-step bucket. Shorter sentences
+    are returned unchanged. A tail shorter than 5 characters stays with the
+    previous piece.
+    """
+    body = text
+    end = ""
+    if body and body[-1] in splits:
+        end = body[-1]
+        body = body[:-1]
+    if len(body) <= max_len:
+        return [text]
+    chunks = []
+    while body:
+        chunks.append(body[:max_len])
+        body = body[max_len:]
+    if len(chunks) >= 2 and len(chunks[-1]) < 5:
+        chunks[-2] += chunks[-1]
+        chunks.pop()
+    pieces = [chunk + "，" for chunk in chunks[:-1]]
+    pieces.append(chunks[-1] + (end or "。"))
+    return pieces
+
+
 def split(todo_text):
     todo_text = todo_text.replace("……", "。").replace("——", "，")
     if todo_text[-1] not in splits:

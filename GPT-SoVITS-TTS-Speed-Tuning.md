@@ -311,6 +311,7 @@ nvidia-smi --query-gpu=memory.used --format=csv,noheader   # 應回到 ~200MiB �
 |---|---|
 | 2026-11-14 | 診斷 Accel/CUDA Graph 為主因；ge_cache + microbatch；鎖定 `CUDAGraph=0`、`MICROBATCH=16`、`EMPTY_CACHE=1`；熱身實測 ~230–240 字/秒 |
 | 2026-11-15 | 加上逐步 CUDA Graph（`GPT_SOVITS_T2S_STEP_GRAPH`）。1200 字 292 字/秒，5000 字 359 字/秒。舊靜態圖維持關閉 |
+| 2026-11-15 | 長句不再拖垮整桶：超過 20 字再切、未完成的句子單獨續跑。注音依長度分桶，並在 VITS 期間準備下一桶。吃神者 4827 字從約 106–192 字/秒回到 300 字/秒以上 |
 
 ---
 
@@ -332,7 +333,7 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 兩種自動退回：
 
 - `kv NNNNMB`：這桶的 KV 緩衝超過 2000MB，不分配。8GB 上不要放寬。16GB 以上若想讓超大 bucket 也走圖，改 `GPT_SoVITS/AR/models/t2s_model.py` 裡 `_batch_decode_step_graph` 的 `2000 * 1024 * 1024`。
-- `hit cap … still running`：有句子在 320 步內沒有結束符。這時整桶改走普通 T2S，避免把超長 token 送進 VITS。
+- 有句子在 320 步內沒結束：已完成的句子留下，只剩一句時把上限放到 1024 繼續走逐步圖。多句同時沒結束才整桶退回普通 T2S。
 
 ### 10.2 換顯卡時的調整順序
 
@@ -368,3 +369,28 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 
 本機 8GB 不要為了追數字把 `CUDAGraph` 設成 `1`。先前這樣做，熱身掉到約 39 字/秒。
 
+
+
+## 11. 吃神者長文：為什麼會掉到 100 多字/秒，以及現在的做法
+
+角色困芽、v2Pro、fp16、參考音已快取。同一份《吃神者》前 4827 字。
+
+| 跑法 | 牆鐘 | 字/秒 | 原因 |
+|---|---:|---:|---|
+| 冷跑，參考音重算 | 約 8–9 秒 / 1000 字量級 | 約 106 | `ref` 本身就 2–4 秒，不能拿來跟熱跑比 |
+| 熱跑，長句不切 | 25–21 秒 | 192–225 | 沒標點的章節標題讓整桶 T2S 超過 320 步，已完成的句子被丟掉重跑 |
+| 熱跑，只修續跑 | 18.3 秒 | 264 | 整桶不再重跑，但長句仍把同桶短句拖到 200 步以後 |
+| 熱跑，超過 20 字再切 | 16.0 秒 | 302 | T2S 6.96 秒，VITS 5.85 秒。這本書的峰值在這裡附近 |
+| 熱跑，注音跟 VITS 重疊 | 15.8 秒 | 306 | 注音等待 0.28 秒；VITS 因為跟 G2PW 同一張卡，從 5.85 秒變成 7.52 秒 |
+| 整理成正式路徑後再測 | 15.89 秒 | 304 | 音檔 1242 秒，與上一列同一段稿。檔案 `GPT-SoVITS-DATA/困芽/bench_v2_5000.wav` |
+
+乾淨文本（cintia 5000 字）沒有這種章節標題，所以可以到 359 字/秒。那不是同一份稿。
+
+做法，由外到內：
+
+1. **超過 20 字才再切。** `split_for_fast_t2s`。中文大約 6 個語意 token 一個字，20 字落在逐步圖最順的 110 步附近。短句不切。標點仍然先照 `cut5`。
+2. **一桶裡只有長句還沒結束時，不要整桶重來。** `_batch_decode_step_graph` 回傳已完成的列。只剩一句就把 token 上限從 320 放到 1024，繼續走逐步圖。
+3. **注音跟聲學重疊，不跟語意 token 重疊。** 分桶只用正規化後的字數，這一步很短。G2PW 也在 GPU 上，若在 T2S 擷取 CUDA graph 時同時跑，graph 會失效。所以下一桶注音是在這一桶 T2S 結束、VITS 開始時才啟動。
+4. **環境維持鎖定值：** `CUDAGraph=0`、`GPT_SOVITS_T2S_STEP_GRAPH=1`、`GPT_SOVITS_VITS_MICROBATCH=16`、`GPT_SOVITS_EMPTY_CACHE=0`、`batch_size=64`、`split_bucket=True`。`pipeline_prefetch` 預設開；分段或串流模式會關掉。
+
+程式入口：`text_segmentation_method.split_for_fast_t2s`、`Text2SemanticDecoder._batch_decode_step_graph`、`TTS.plan_length_buckets`、`_PhoneBucketPrefetcher`。
