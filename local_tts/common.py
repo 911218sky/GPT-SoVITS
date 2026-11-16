@@ -7,6 +7,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASSET_ROOT = Path(__file__).resolve().parent / "assets"
 MODEL_ROOT = PROJECT_ROOT
 DATA_ROOT = ASSET_ROOT / "Data"
+NOVEL_DATA_ROOT = PROJECT_ROOT.parent / "GPT-SoVITS-DATA"
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class RoleProfile:
     prompt_text: str
     prompt_lang: str = "zh"
     speed_factor: float = 1.0
+    post_tempo: float = 1.0
 
 
 ROLE_PROFILES = {
@@ -62,13 +64,21 @@ ROLE_PROFILES = {
         prompt_text="還是你來吧，我突然間覺得好像也沒有那麼迫切的想要脫單了。",
         speed_factor=1.0,
     ),
-        prompt_text='怎么样愿意和姐姐在一起了吗',
+    "困芽": RoleProfile(
+        gpt_weights_path=MODEL_ROOT / "GPT_weights_v2Pro" / "困芽-e15.ckpt",
+        sovits_weights_path=MODEL_ROOT / "SoVITS_weights_v2Pro" / "困芽_e14_s364.pth",
+        ref_audio_path=NOVEL_DATA_ROOT / "困芽" / "ref.wav",
+        prompt_text="怎么样愿意和姐姐在一起了吗",
         speed_factor=1.0,
+        post_tempo=1.3,
     ),
-        sovits_weights_path=Path("/home/sky/code/GPT-SoVITS/GPT_SoVITS/pretrained_models/gsv-v5-pretrained/s2Gv5turbo.pth"),
-        ref_audio_path=Path("/home/sky/code/GPT-SoVITS-DATA/困芽/ref.wav"),
-        prompt_text='怎么样愿意和姐姐在一起了吗',
+    "困芽v5": RoleProfile(
+        gpt_weights_path=PROJECT_ROOT / "GPT_SoVITS" / "pretrained_models" / "s1v3.ckpt",
+        sovits_weights_path=PROJECT_ROOT / "GPT_SoVITS" / "pretrained_models" / "gsv-v5-pretrained" / "s2Gv5turbo.pth",
+        ref_audio_path=NOVEL_DATA_ROOT / "困芽" / "ref.wav",
+        prompt_text="怎么样愿意和姐姐在一起了吗",
         speed_factor=1.0,
+        post_tempo=1.3,
     ),
 }
 

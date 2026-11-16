@@ -25,7 +25,7 @@ DEFAULT_FRAGMENT_INTERVAL = 0.0
 DEFAULT_REPETITION_PENALTY = 1.35
 DEFAULT_SPLIT_METHOD = "auto"  # v2Pro -> cut5, v5turbo -> cut20 (~20 chars)
 DEFAULT_TOP_K = 15
-DEFAULT_CHARS_PER_SEC = 310.0
+DEFAULT_CHARS_PER_SEC = 300.0
 
 
 def format_duration(seconds: float) -> str:
@@ -234,6 +234,14 @@ def parse_args() -> argparse.Namespace:
 
 def _run_batch(args: argparse.Namespace) -> int:
     profile = get_role_profile(args.role)
+    if abs(profile.post_tempo - 1.0) > 1e-6:
+        LOGGER.info(
+            "角色 %s 後期語速 x%g。合成仍用 speed_factor %.1f；收尾時執行 finish_audio.sh all --role %s",
+            args.role,
+            profile.post_tempo,
+            profile.speed_factor,
+            args.role,
+        )
     input_path = require_file(args.file_path, "輸入文字檔")
     output_dir = args.output_dir or Path(__file__).resolve().parent / "output" / f"GPT_{args.role}_{input_path.stem}"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -277,6 +285,12 @@ def _run_batch(args: argparse.Namespace) -> int:
     skipped = 0
     done_chars = 0
     wall_started = time.perf_counter()
+    if pending_indices:
+        warm_src = chunks[pending_indices[0]][:240]
+        warm_payload = build_payload(profile, warm_src, args)
+        if warm_payload["text"]:
+            LOGGER.info("熱身 %d 字（參考音與 CUDA graph，不寫檔）", len(warm_payload["text"]))
+            request_audio(args.server_url.rstrip("/"), warm_payload, args.max_retries)
     for index, chunk in enumerate(tqdm(chunks, desc=str(output_dir))):
         output_path = output_dir / f"{index}.{extension}"
         if output_path.exists():

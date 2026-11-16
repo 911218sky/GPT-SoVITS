@@ -1,3 +1,4 @@
+import os
 import re
 from typing import Callable
 
@@ -68,15 +69,23 @@ def split_big_text(text, max_len=510):
 
 
 
-def split_for_fast_t2s(text, max_len=120):
+def split_for_fast_t2s(text, max_len=None):
     """Split only a run-on that has no punctuation of its own.
 
     Punctuation is handled by cut5 or cut20 before this runs. Cutting those
     groups again every 20 characters restarts the voice on every clause.
-    120 characters still stops a chapter title or a long digit string from
-    holding T2S for hundreds of steps. Shorter text is returned unchanged.
+    A run-on longer than this still holds T2S for hundreds of steps, because
+    one sentence is allowed to continue past the usual 320-step stop.
+    20 characters is the 2026-11-16 remeasure that holds this chapter near 300 chars/s. 120 was 271.
+    Override with GPT_SOVITS_FAST_SPLIT. Shorter text is returned unchanged.
     A tail shorter than 5 characters stays with the previous piece.
     """
+    if max_len is None:
+        try:
+            max_len = int(os.environ.get("GPT_SOVITS_FAST_SPLIT", "20"))
+        except ValueError:
+            max_len = 20
+        max_len = max(20, max_len)
     body = text
     end = ""
     if body and body[-1] in splits:

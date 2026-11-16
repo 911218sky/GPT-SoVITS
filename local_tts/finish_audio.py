@@ -15,6 +15,8 @@ from typing import Final
 
 from tqdm import tqdm
 
+from .common import get_role_profile
+
 LOGGER = logging.getLogger(__name__)
 
 AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".aac", ".flac", ".m4a"})
@@ -688,7 +690,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="中繼 MP3 目錄（預設 <input>_prepared）",
     )
-    p_all.add_argument("--tempo", type=float, default=1.0, help="語速，1.0=不調")
+    p_all.add_argument(
+        "--tempo",
+        type=float,
+        default=None,
+        help="語速。省略時，有 --role 就用該角色的 post_tempo，否則 1.0",
+    )
+    p_all.add_argument(
+        "--role",
+        default=None,
+        help="角色名。只有 post_tempo 不是 1 的角色會在省略 --tempo 時調速",
+    )
     p_all.add_argument("--max-size-mb", type=_positive_megabytes, default=1024)
     p_all.add_argument(
         "--output-name",
@@ -778,6 +790,12 @@ def cmd_all(args: argparse.Namespace) -> int:
     work_dir = (args.work_dir or Path(f"{input_dir}_prepared")).resolve()
     output_dir = (args.output_dir or Path(f"{input_dir}_merged")).resolve()
     output_name = resolve_merge_output_name(args.output_name, input_dir)
+    if args.tempo is None:
+        if args.role:
+            args.tempo = get_role_profile(args.role).post_tempo
+            LOGGER.info("使用角色 %s 的後期語速 x%g", args.role, args.tempo)
+        else:
+            args.tempo = 1.0
     do_tempo = abs(args.tempo - 1.0) > 1e-6
 
     LOGGER.info("=== finish_audio all ===")

@@ -22,6 +22,7 @@ usage() {
   merge   只合併
 
 範例：
+  # 困芽後期 1.3 倍：加上 --role 困芽。其他角色不要加。
   ./local_tts/finish_audio.sh all \
     --input "local_tts/output/班级公交求生_658_真人男" \
     --tempo 0.9

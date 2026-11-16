@@ -187,7 +187,7 @@ local_tts/output/GPT_<角色>_<TXT檔名>/
 
 每段語音先輸出為 WAV；可以用 `--output-dir` 指定其他位置。
 
-RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是：`--max-text-length 1200`、`--split-method auto`（v2Pro 為 cut5，v5turbo 為 cut20）、`--batch-size 64`、`--split-bucket`、`--parallel-infer`、`--top-k 15`、`--fragment-interval 0`（v2 相對舊 2400/56 約快 30%；句間不再補靜音）。`真人男` 預設 `speed_factor=1.0`，以保留 bucket；語速若要變慢，用 `./local_tts/finish_audio.sh all --tempo 0.9`。文本 BERT 特徵改為批次抽取（預設每批 64 句，可用環境變數 `GPT_SOVITS_BERT_BATCH_SIZE` 調整），並留在 GPU 上避免每句 CPU 來回拷貝。速度與不要改的開關見 `GPT-SoVITS-TTS-Speed-Tuning.md` 的「接手先看」。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時依序降到 `--batch-size 56`、`48`、`40`。
+RTX 3060 Ti 批量轉長篇小說時，`local_tts/batch_tts.py` 的預設值是：`--max-text-length 5000`、開跑先熱身一段不寫檔、`--split-method auto`（v2Pro 為 cut5，v5turbo 為 cut20）、沒標點長句超過 20 字再切（`GPT_SOVITS_FAST_SPLIT`）、`--batch-size 64`、`--split-bucket`、`--parallel-infer`、`--top-k 15`、`--fragment-interval 0`。合成 `speed_factor` 維持 1.0，才能保留 bucket。後期 1.3 倍只給困芽和困芽v5：`./local_tts/finish_audio.sh all --role 困芽`。其他角色不傳 `--role` 時語速是 1.0。文本 BERT 特徵改為批次抽取（預設每批 64 句，可用環境變數 `GPT_SOVITS_BERT_BATCH_SIZE` 調整），並留在 GPU 上避免每句 CPU 來回拷貝。速度與不要改的開關見 `GPT-SoVITS-TTS-Speed-Tuning.md` 開頭。不要為單張 GPU 開多個批次 HTTP worker；GPT-SoVITS 會在單一請求內做 batch 與 bucket，外部併發通常只會增加 VRAM 壓力與不穩定。OOM 時依序降到 `--batch-size 56`、`48`、`40`。
 
 測試批次流程可使用原創樣本：
 

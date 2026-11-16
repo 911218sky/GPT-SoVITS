@@ -31,10 +31,14 @@ cd /home/sky/code/GPT-SoVITS
 | `GPT_SOVITS_T2S_STEP_GRAPH` | `1` | 語意 token 用逐步圖，算完就放掉 |
 | `GPT_SOVITS_VITS_MICROBATCH` | `16` | v2Pro 聲學一次最多合 16 句。v5 不走這條 |
 | `GPT_SOVITS_EMPTY_CACHE` | `0` | 推理途中不收記憶體。整批結束再清一次 |
-| `GPT_SOVITS_V5_CFM_BATCH` | `24` | v5turbo 一次送進 CFM 的句數 |
+| `GPT_SOVITS_V5_CFM_BATCH` | `16` | v5turbo 一次送進 CFM 的句數 |
+| `GPT_SOVITS_V5_T2S_BATCH` | `32` | v5turbo 語意解碼一次最多 32 句 |
 | `GPT_SOVITS_V5_REF_FRAMES` | `160` | v5 參考梅爾只留最後 160 幀（1.6 秒） |
+| `GPT_SOVITS_FAST_SPLIT` | `20` | 沒有標點、長過 20 字才補一個逗號 |
 
-批次預設在 `local_tts/batch_tts.py`：每次約 5000 字、`split_method=auto`、`batch_size=64`、`fragment_interval=0`、分桶開、平行推理開、`speed_factor=1.0`。語速要變慢就在轉完後用 `finish_audio.sh`。推理時改語速會關掉分桶。
+批次預設在 `local_tts/batch_tts.py`：每次約 5000 字、開跑先熱身一段不寫檔、`split_method=auto`、`batch_size=64`、`fragment_interval=0`、分桶開、平行推理開、`speed_factor=1.0`。推理時改語速會關掉分桶，所以合成保持 1.0。
+
+2026-11-16，困芽 v2、吃神者 4827 字、熱身後：牆鐘約 **297 字/秒**，伺服器內部約 **300 字/秒**。v5turbo 上次同書對照約 **98 字/秒**。後期 **1.3 倍只給困芽和困芽v5**，收尾用 `./local_tts/finish_audio.sh all --role 困芽`（或 `困芽v5`）。其他角色不傳 `--role` 時，`all` 的語速是 1.0。
 
 
 
@@ -47,7 +51,7 @@ cd /home/sky/code/GPT-SoVITS
 | 做什麼 | 在哪 |
 |---|---|
 | v2 用 cut5、v5 用 cut20 | `default_split_method`、`cut20` |
-| 沒有標點而且長過 120 字才硬切 | `split_for_fast_t2s` |
+| 沒有標點而且長過 20 字才硬切（`GPT_SOVITS_FAST_SPLIT=20`） | `split_for_fast_t2s` |
 | v5 多句一起跑 CFM，聲碼器最多 48 句 | `synthesize_v5_mels`、`using_vocoder_synthesis_batched_infer` |
 | 長句不要讓整桶重跑 | `t2s_model.py` 的 `_batch_decode_step_graph` |
 | 下一桶注音跟聲學一起做 | `TTS.py` 的 `_PhoneBucketPrefetcher` |
@@ -63,7 +67,7 @@ cd /home/sky/code/GPT-SoVITS
 
 現在另有一條 **逐步 CUDA Graph**（`GPT_SOVITS_T2S_STEP_GRAPH`，預設開）：只把 T2S 每一步的 Transformer 收成圖，算完就放掉 KV，再跑 VITS。這條用的是 PyTorch 標準 CUDA Graph，不綁 RTX 3060 Ti，也不綁 UEFI 張量解鎖。
 
-**本機目前實測（cintia，fp16，WSL2）：**
+**2026-11-15 乾淨稿（cintia，fp16，WSL2）。** 這不是現在的小說預設數字；吃神者的數字在本檔開頭。
 
 | 文章 | 牆鐘 | 字/秒 | 伺服器內部分段 |
 |---|---|---|---|
@@ -233,11 +237,11 @@ tr '\0' '\n' < /proc/$PID/environ | grep -E 'CUDAGraph|VITS_MICRO|EMPTY_CACHE|TI
 | `GPT_SOVITS_T2S_MAX_BATCH` | `8` | 只在強制開舊靜態圖時使用 |
 | `TQDM_DISABLE` | `1` | 少印進度 |
 
-批次小說參數（`local_tts/batch_tts.py` 預設，勿隨便改大）：
+批次小說參數（`local_tts/batch_tts.py` 現行預設）：
 
 | 參數 | 值 |
 |---|---|
-| `max_text_length` | 1200 |
+| `max_text_length` | 5000 |
 | `text_split_method` | auto（v2Pro 為 cut5，v5turbo 為 cut20） |
 | `batch_size` | 64（v5 聲碼器內部再以 48 句一組） |
 | `split_bucket` | True |
@@ -439,6 +443,8 @@ Log 出現 `[T2S] step_graph bsz=… steps=…` 表示這桶走逐步圖。出�
 3. **注音跟聲學重疊，不跟語意 token 重疊。** 分桶只用正規化後的字數，這一步很短。G2PW 也在 GPU 上，若在 T2S 擷取 CUDA graph 時同時跑，graph 會失效。所以下一桶注音是在這一桶 T2S 結束、VITS 開始時才啟動。
 4. **環境維持鎖定值：** `CUDAGraph=0`、`GPT_SOVITS_T2S_STEP_GRAPH=1`、`GPT_SOVITS_VITS_MICROBATCH=16`、`GPT_SOVITS_EMPTY_CACHE=0`、`batch_size=64`、`split_bucket=True`。`pipeline_prefetch` 預設開；分段或串流模式會關掉。
 
+
+2026-11-16 同一段重測（困芽 v2、吃神者 4827 字、熱跑）：長句上限 120 字是 271 字/秒，60 字是 265，30 字是 287，20 字是 297（伺服器計時 300）。之後小說用 20 字上限、約 5000 字一次請求、先熱身。
 程式入口：`text_segmentation_method.split_for_fast_t2s`、`Text2SemanticDecoder._batch_decode_step_graph`、`TTS.plan_length_buckets`、`_PhoneBucketPrefetcher`。
 
 ## 12. 句間不補靜音，v5 用大約 20 字

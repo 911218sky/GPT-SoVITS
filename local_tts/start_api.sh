@@ -28,5 +28,7 @@ export GPT_SOVITS_V5_CFM_BATCH="${GPT_SOVITS_V5_CFM_BATCH:-16}"
 export GPT_SOVITS_V5_T2S_BATCH="${GPT_SOVITS_V5_T2S_BATCH:-32}"
 export GPT_SOVITS_V5_REF_FRAMES="${GPT_SOVITS_V5_REF_FRAMES:-160}"
 export TQDM_DISABLE="${TQDM_DISABLE:-1}"
+# Run-ons longer than this get one extra comma. 20-char split measured ~297 chars/s on 吃神者 4827.
+export GPT_SOVITS_FAST_SPLIT="${GPT_SOVITS_FAST_SPLIT:-20}"
 cd "$PROJECT_ROOT"
 exec "$ENV_DIR/bin/python" -m local_tts.start_api "$@"
